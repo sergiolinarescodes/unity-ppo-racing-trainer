@@ -1,9 +1,12 @@
+using System.Collections.Generic;
 using UnityPpoRacingTrainer.Core.AiDriver.Training;
 using UnityPpoRacingTrainer.Core.AiDriver.Versions.Latest;
+using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 using UnityPpoRacingTrainer.Core.AiDriver.Versions.V1;
 using Reflex.Core;
 using Unidad.Core.Bootstrap;
 using Unidad.Core.Testing;
+using UnityEngine;
 
 namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
 {
@@ -48,11 +51,32 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
                     () => c.TryResolveOptional<IRewardShaper>() ?? NullRewardShaper.Instance),
                 typeof(V1VersionProfile));
 
-            // Registry holds every known profile keyed by enum.
+            // Registry holds every known profile keyed by enum. Phase 2 flip:
+            // when the manifest folder contains a "latest" entry, the active
+            // Latest profile becomes the data-driven ManifestBackedVersionProfile
+            // (sourced from Assets/_Bootstrap/Configs/Versions/latest.json).
+            // Falls back to the historical C# LatestVersionProfile if the
+            // manifest is missing or fails to load — ensures bootstrap never
+            // hard-fails on a malformed manifest. The bit-identical parity is
+            // locked by ManifestParityTests.
             builder.AddSingleton(c =>
             {
                 var registry = new AiDriverVersionRegistry();
-                registry.Register(AiDriverVersion.Latest, c.Resolve<LatestVersionProfile>());
+                var manifests = c.TryResolveOptional<IReadOnlyDictionary<string, VersionManifest>>();
+                IAiDriverVersionProfile latest;
+                if (manifests != null && manifests.TryGetValue("latest", out var latestManifest))
+                {
+                    latest = new ManifestBackedVersionProfile(
+                        latestManifest,
+                        () => c.TryResolveOptional<IRewardShaper>() ?? NullRewardShaper.Instance,
+                        AiDriverVersion.Latest);
+                }
+                else
+                {
+                    Debug.LogWarning("[AiDriverVersionsSystemInstaller] manifest \"latest\" not found — falling back to C# LatestVersionProfile.");
+                    latest = c.Resolve<LatestVersionProfile>();
+                }
+                registry.Register(AiDriverVersion.Latest, latest);
                 registry.Register(AiDriverVersion.V1, c.Resolve<V1VersionProfile>());
                 return registry;
             }, typeof(AiDriverVersionRegistry));

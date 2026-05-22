@@ -1,6 +1,7 @@
 using UnityPpoRacingTrainer.Core.AiDriver.Physics;
 using UnityPpoRacingTrainer.Core.AiDriver.Training;
 using UnityPpoRacingTrainer.Core.AiDriver.Training.Stages;
+using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 
 namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
 {
@@ -56,6 +57,15 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
         /// draft drag) still mutate per-car copies of these values at
         /// runtime; this property exposes the unmodified baseline.</summary>
         CarParameters PhysicsDefaults { get; }
+
+        /// <summary>Slipstream / drafting constants — wake distance, lateral
+        /// tolerance, drag cut, catch-up accel boost, activation thresholds,
+        /// and attack/release smoothing taus. <see cref="DraftService"/>
+        /// consumes this in its ctor instead of baking the constants. Phase 2+
+        /// reads from the manifest; <see cref="LatestVersionProfile"/> /
+        /// <see cref="V1.V1VersionProfile"/> return canonical defaults that
+        /// match the historical baked values.</summary>
+        DraftingSettings Drafting { get; }
 
         /// <summary>Reward shaper to plug into the policy service. Snapshots
         /// trained without shaping return a no-op shaper; Latest uses the

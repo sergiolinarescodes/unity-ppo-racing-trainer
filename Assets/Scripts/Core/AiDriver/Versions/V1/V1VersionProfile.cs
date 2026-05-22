@@ -2,6 +2,7 @@ using UnityPpoRacingTrainer.Core.AiDriver.Physics;
 using UnityPpoRacingTrainer.Core.AiDriver.Policy;
 using UnityPpoRacingTrainer.Core.AiDriver.Training;
 using UnityPpoRacingTrainer.Core.AiDriver.Training.Stages;
+using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 
 namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.V1
 {
@@ -60,6 +61,12 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.V1
         public string YamlConfigPath => "Assets/_Bootstrap/Configs/MlAgents/racing_driver_v1.yaml";
         public int FloatsPerFrame => RacingObservationLayout.FloatsPerFrame;
         public CarParameters PhysicsDefaults => V1PhysicsProfile.PhysicsDefaults;
+        // Frozen V1 snapshot took the same drafting constants as the canonical
+        // baseline. If a future canonical mutates DraftingSettings defaults,
+        // V1 must keep these historical values explicitly to honor the snapshot
+        // contract — initialize fields literal-by-literal here rather than
+        // relying on init defaults.
+        public DraftingSettings Drafting => new();
         public IRewardShaper RewardShaper => _rewardShaperFactory();
         public bool RequiresSideSystems => true;
         public IStageProfileRegistry StageProfiles => _stageProfiles;

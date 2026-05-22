@@ -2,6 +2,7 @@ using UnityPpoRacingTrainer.Core.AiDriver.Physics;
 using UnityPpoRacingTrainer.Core.AiDriver.Policy;
 using UnityPpoRacingTrainer.Core.AiDriver.Training;
 using UnityPpoRacingTrainer.Core.AiDriver.Training.Stages;
+using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 
 namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Latest
 {
@@ -50,6 +51,11 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Latest
         public string YamlConfigPath => "Assets/_Bootstrap/Configs/MlAgents/racing_driver.yaml";
         public int FloatsPerFrame => RacingObservationLayout.FloatsPerFrame;
         public CarParameters PhysicsDefaults => AiDriverPhysicsDefaults.Latest;
+        // Defaults on DraftingSettings mirror the historical baked constants
+        // in Drafting.cs (8 / 2.5 / 0.33 / 0.09625 / 6 / 3 / 0.05 / 0.7) — keep
+        // in sync if either side moves. When Phase 6 deletes this profile, the
+        // ManifestBackedVersionProfile fully replaces this path.
+        public DraftingSettings Drafting => new();
         public IRewardShaper RewardShaper => _rewardShaperFactory();
         public bool RequiresSideSystems => true;
         public IStageProfileRegistry StageProfiles => _stageProfiles;

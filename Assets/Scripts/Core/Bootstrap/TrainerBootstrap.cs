@@ -101,6 +101,12 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
             installers.Add(new RealisticTrackGenerationSystemInstaller());
             installers.Add(new AiDriverLoopSystemInstaller());
             installers.Add(new AiDriverPhysicsSystemInstaller());
+            // Manifest scaffolding (Phase 1, dormant). Loads
+            // Assets/_Bootstrap/Configs/Versions/*.json into a dict and
+            // exposes empty strategy registries. Nothing consumes these yet —
+            // AiDriverVersionsSystemInstaller below still binds the active
+            // IAiDriverVersionProfile from the hardcoded C# profiles.
+            installers.Add(new UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest.VersionManifestSystemInstaller());
             // Versions infra goes BEFORE AiDriverPolicySystemInstaller so
             // the policy service can resolve IAiDriverVersionProfile in ctor.
             installers.Add(new AiDriverVersionsSystemInstaller(activeVersion));
