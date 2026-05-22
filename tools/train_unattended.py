@@ -151,7 +151,11 @@ def find_behavior_dir(run_dir: Path) -> Path | None:
 def copy_final_onnx(run_dir: Path, dest_dir: Path, timed_out: bool) -> None:
     behavior_dir = find_behavior_dir(run_dir)
     if behavior_dir is None:
-        print(f"[train] no ONNX found in {run_dir} — training never reached a checkpoint. Check the run directory + console logs.", flush=True)
+        print(
+            f"[train] no ONNX found in {run_dir} — training never reached a checkpoint. "
+            "Check the run directory + console logs.",
+            flush=True,
+        )
         return
     final_onnx = run_dir / f"{behavior_dir.name}.onnx"
     checkpoint_onnxs = sorted(behavior_dir.glob("*-*.onnx"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -187,8 +191,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--results-root", default=DEFAULT_RESULTS_ROOT)
     parser.add_argument("--onnx-dest", default=DEFAULT_ONNX_DEST)
     parser.add_argument("--base-port", type=int, default=5104)
-    parser.add_argument("--timeout-wait", type=int, default=300, help="mlagents-learn --timeout-wait. Covers Burst AOT cold-start.")
-    parser.add_argument("--race-scoped", default="0", help="Sets RACING_RACE_SCOPED for the headless envs. '0' = per-car terminals (canonical).")
+    parser.add_argument(
+        "--timeout-wait",
+        type=int,
+        default=300,
+        help="mlagents-learn --timeout-wait. Covers Burst AOT cold-start.",
+    )
+    parser.add_argument(
+        "--race-scoped",
+        default="0",
+        help="Sets RACING_RACE_SCOPED for the headless envs. '0' = per-car terminals (canonical).",
+    )
     return parser.parse_args()
 
 
@@ -227,7 +240,11 @@ def main() -> int:
         print("Build it via the Unity Editor menu: Build > AI Driver Trainer (Headless)", flush=True)
         return 1
     if psutil is None:
-        print("WARNING: psutil not installed — orphan cleanup disabled. Run `python tools/setup.py` to fix.", flush=True)
+        print(
+            "WARNING: psutil not installed — orphan cleanup disabled. "
+            "Run `python tools/setup.py` to fix.",
+            flush=True,
+        )
 
     env_proc_name = Path(build_path).stem  # AiDriverTrainer
 
@@ -259,7 +276,10 @@ def main() -> int:
             )
             print("", flush=True)
             print("=" * 60, flush=True)
-            print(f"[train] attempt {attempt}   run={run_id}   envs={args.num_envs}   remaining={remaining}", flush=True)
+            print(
+                f"[train] attempt {attempt}   run={run_id}   envs={args.num_envs}   remaining={remaining}",
+                flush=True,
+            )
             print("=" * 60, flush=True)
 
             cmd = [
@@ -291,7 +311,11 @@ def main() -> int:
 
             while _proc.poll() is None:
                 if time.time() >= deadline:
-                    print(f"[train] killing mlagents-learn (pid={_proc.pid}) — wall-clock budget hit ({args.max_hours} h)", flush=True)
+                    print(
+                        f"[train] killing mlagents-learn (pid={_proc.pid}) — "
+                        f"wall-clock budget hit ({args.max_hours} h)",
+                        flush=True,
+                    )
                     try:
                         _proc.terminate()
                         _proc.wait(timeout=5)

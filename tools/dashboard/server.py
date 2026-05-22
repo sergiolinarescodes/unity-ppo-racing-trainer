@@ -422,7 +422,7 @@ def _find_longest_straight_midpoint(anchors, cum, total, threshold=0.15):
 
     # Longest contiguous run with curvature below threshold. Walk 2n to
     # capture runs that cross the seam at i=0.
-    best_start, best_end, best_len = 0, 0, 0.0
+    best_start, _best_end, best_len = 0, 0, 0.0
     run_start = -1
     run_len = 0.0
     for k in range(2 * n):
@@ -437,7 +437,6 @@ def _find_longest_straight_midpoint(anchors, cum, total, threshold=0.15):
             if run_len > best_len:
                 best_len = run_len
                 best_start = run_start
-                best_end = i
             if k >= n and i == best_start:
                 break
         else:
@@ -452,7 +451,7 @@ def _find_longest_straight_midpoint(anchors, cum, total, threshold=0.15):
             if seg > max_seg:
                 max_seg = seg
                 max_idx = i
-        best_start, best_end, best_len = max_idx, (max_idx + 1) % n, max_seg
+        best_start, _best_end, best_len = max_idx, (max_idx + 1) % n, max_seg
 
     # Midpoint arc along the run, then nearest anchor.
     start_arc = cum[best_start]
@@ -566,9 +565,11 @@ def load_circuits():
                 xs.extend(p["X"] for p in placements)
                 ys.extend(p["Y"] for p in placements)
             for w in walls:
-                xs.extend((w[0], w[2])); ys.extend((w[1], w[3]))
+                xs.extend((w[0], w[2]))
+                ys.extend((w[1], w[3]))
             for q in kerbs:
-                xs.extend((q[0], q[2], q[4], q[6])); ys.extend((q[1], q[3], q[5], q[7]))
+                xs.extend((q[0], q[2], q[4], q[6]))
+                ys.extend((q[1], q[3], q[5], q[7]))
             circuit_id_for_warn = rec.get("Id") or jf.stem
             lap_start_idx, sector_idx, total_arc = _compute_sector_meta(
                 anchors,
@@ -655,7 +656,8 @@ def _expand_bbox_with_points(bbox, *point_streams, pad_frac=0.05):
     for stream in point_streams:
         for pt in stream:
             try:
-                x = float(pt[0]); z = float(pt[1])
+                x = float(pt[0])
+                z = float(pt[1])
             except (TypeError, ValueError, IndexError):
                 continue
             minX = x if minX is None else min(minX, x)
@@ -715,9 +717,11 @@ def _record_from_json(jf, default_stage_id, default_stage_name):
         xs.extend(p["X"] for p in placements)
         ys.extend(p["Y"] for p in placements)
     for w in walls:
-        xs.extend((w[0], w[2])); ys.extend((w[1], w[3]))
+        xs.extend((w[0], w[2]))
+        ys.extend((w[1], w[3]))
     for q in kerbs:
-        xs.extend((q[0], q[2], q[4], q[6])); ys.extend((q[1], q[3], q[5], q[7]))
+        xs.extend((q[0], q[2], q[4], q[6]))
+        ys.extend((q[1], q[3], q[5], q[7]))
 
     # Closure-piece overlays — each segment is one closure shape's per-piece
     # spine in world XZ. Authored-only-closure circuits emit these so the
@@ -743,7 +747,8 @@ def _record_from_json(jf, default_stage_id, default_stage_name):
                 pts = [[p[0] * anchor_scale, p[1] * anchor_scale] for p in pts]
             closure_segments.append(pts)
             for px, py in pts:
-                xs.append(px); ys.append(py)
+                xs.append(px)
+                ys.append(py)
     circuit_id_for_warn = rec.get("Id") or jf.stem
     lap_start_idx, sector_idx, total_arc = _compute_sector_meta(
         anchors,
@@ -1709,7 +1714,7 @@ _LAST_PRUNE = {"ts": 0.0}
 
 
 def _cutoff_iso(seconds):
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     return (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
 
 
@@ -1902,7 +1907,7 @@ def filter_events_by_window(events, window_seconds):
     terminating episode_end are kept (they belong to an in-progress run)."""
     if not window_seconds or window_seconds <= 0:
         return events
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     cutoff_iso = (datetime.now(timezone.utc)
                   - timedelta(seconds=window_seconds)).isoformat()
     out = []
@@ -1961,7 +1966,6 @@ def _persist_circuit_records(agg, run_id="tierlist"):
             circuits = data["circuits"]
             now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             dirty = False
-            SIM_HZ = 50.0
             for row in agg["circuits"]:
                 cid = row.get("circuit") or ""
                 if not cid or cid == "<unknown>":
@@ -3488,7 +3492,8 @@ def _sample_pos_iter(race):
         for s in (d.get("samples") or []):
             pos = s.get("pos") or {}
             if isinstance(pos, dict):
-                x = pos.get("x"); z = pos.get("z")
+                x = pos.get("x")
+                z = pos.get("z")
             elif isinstance(pos, (list, tuple)) and len(pos) >= 3:
                 x, z = pos[0], pos[2]
             else:
