@@ -16,11 +16,9 @@ the venv interpreter and launches training.
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import subprocess
 import sys
-import venv
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -91,14 +89,14 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    print(f"PPO racing trainer venv bootstrap")
+    print("PPO racing trainer venv bootstrap")
     print(f"  repo root: {REPO_ROOT}")
     print(f"  venv:      {VENV_DIR}")
     print(f"  host:      {sys.platform}")
 
     py310 = find_python_310()
     if py310 is None:
-        print(f"\nERROR: Python 3.10 not found on PATH.")
+        print("\nERROR: Python 3.10 not found on PATH.")
         print(f"Install it first:  {install_hint()}")
         return 2
     print(f"  python:    {py310}")
@@ -152,8 +150,8 @@ def main() -> int:
 
     print("\nSetup complete.")
     print(f"  - Venv at {VENV_DIR}")
-    print(f"  - Run training:  python tools/train_unattended.py  (auto-uses venv)")
-    print(f"  - Run dashboard: python tools/dashboard/server.py  (uses your system python)")
+    print("  - Run training:  python tools/train_unattended.py  (auto-uses venv)")
+    print("  - Run dashboard: python tools/dashboard/server.py  (uses your system python)")
     return 0
 
 
