@@ -12,10 +12,8 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Physics.Draft
         public void Install(ContainerBuilder builder)
         {
             // Slipstream tuning comes from the active version profile —
-            // ManifestBackedVersionProfile reads it from latest.json's
-            // `drafting` section; LatestVersionProfile / V1VersionProfile
-            // return historical defaults that match the prior baked constants
-            // bit-for-bit.
+            // ManifestBackedVersionProfile reads it from the active
+            // manifest's `drafting` section (e.g. latest.json / v1.json).
             builder.AddSingleton(c =>
             {
                 var profile = c.Resolve<IAiDriverVersionProfile>();

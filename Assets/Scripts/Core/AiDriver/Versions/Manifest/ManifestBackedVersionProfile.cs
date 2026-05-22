@@ -10,12 +10,13 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
     /// <summary>
     /// Data-driven <see cref="IAiDriverVersionProfile"/> backed by a
     /// <see cref="VersionManifest"/>. Reads physics, observation, runtime,
-    /// and stage data from the manifest; resolves the reward shaper through
-    /// the same lazy-<c>Func</c> indirection the C# profiles use to avoid
-    /// the DI cycle.
+    /// drafting, and stage data straight from the manifest; resolves the
+    /// reward shaper through a lazy <c>Func</c> to dodge the DI cycle
+    /// (profile → shaper → IActiveStageProfile → profile).
     ///
-    /// Phase 1: this class exists but no installer binds it as the active
-    /// profile. The current <c>LatestVersionProfile</c> remains authoritative.
+    /// One instance per known version is created by
+    /// <c>AiDriverVersionsSystemInstaller</c> at bootstrap; the registry
+    /// picks the active one by enum.
     /// </summary>
     internal sealed class ManifestBackedVersionProfile : IAiDriverVersionProfile
     {

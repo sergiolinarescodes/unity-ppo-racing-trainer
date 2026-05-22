@@ -243,5 +243,17 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Config
         public int OtherCarsBehind { get; init; } = 2;
         public float LateralGAtSaturation { get; init; } = 8.0f;
         public float ReferenceHalfWidth { get; init; } = 1.5f;
+
+        /// <summary>
+        /// Stable FNV-1a 64-bit hex hash of the observation layout structure
+        /// (FloatsPerFrame, block sizes, wall ray angles, lookahead seconds).
+        /// Empty string means "no hash recorded" (legacy / unmigrated
+        /// manifest); the snapshot test then dumps the live value so the
+        /// maintainer can paste it in.
+        ///
+        /// Distinct from runtime float values — only the structure is
+        /// hashed. Drift detection without re-training paranoia.
+        /// </summary>
+        public string LayoutHash { get; init; } = "";
     }
 }

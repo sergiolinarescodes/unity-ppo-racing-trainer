@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using UnityPpoRacingTrainer.Core.AiDriver.Loop;
 using UnityPpoRacingTrainer.Core.AiDriver.Physics;
+using UnityPpoRacingTrainer.Core.AiDriver.Training;
 using UnityPpoRacingTrainer.Core.AiDriver.Training.Curriculum;
 using UnityPpoRacingTrainer.Core.AiDriver.Training.Generation;
 using UnityPpoRacingTrainer.Core.Terrain;
@@ -254,7 +255,11 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy.Scenarios
             _trackQuery = new TrackQueryService(_eventBus, _loopService, _collision);
             _carSim = new CarSimulationService(_eventBus, _trackQuery, _collision);
             _profileRegistry = new DriverProfileRegistry();
-            var versionProfile = new Versions.Latest.LatestVersionProfile(() => new Versions.Latest.NullRewardShaper());
+            var manifests = Versions.Manifest.VersionManifestLoader.LoadAll();
+            var versionProfile = new Versions.Manifest.ManifestBackedVersionProfile(
+                manifests["latest"],
+                () => NullRewardShaper.Instance,
+                Versions.AiDriverVersion.Latest);
             _policyService = new AiDriverPolicyService(_eventBus, _carSim, _trackQuery, _loopService, _profileRegistry, versionProfile, _collision);
         }
 

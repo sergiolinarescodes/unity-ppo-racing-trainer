@@ -7,15 +7,21 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
     /// <summary>
     /// Self-contained per-version JSON manifest. One file per version under
     /// <c>Assets/_Bootstrap/Configs/Versions/&lt;version_id&gt;.json</c>.
+    /// The single source of truth for every per-version tunable: physics
+    /// constants, drafting, tire wear, reward weights, curriculum stages,
+    /// observation layout selection, prefab / ONNX paths.
     ///
-    /// Phase 1: dormant — loader + POCO exist but no DI binding consumes this
-    /// as the active <see cref="IAiDriverVersionProfile"/>. The current C#
-    /// <c>LatestVersionProfile</c> / <c>V1VersionProfile</c> remain authoritative
-    /// until later phases flip the switch (see plan
-    /// <c>~/.claude/plans/can-you-analyze-how-floofy-gadget.md</c>).
+    /// Adding a new version is two steps: add an
+    /// <see cref="AiDriverVersion"/> enum value + a row in
+    /// <c>AiDriverVersionsSystemInstaller.VersionEnumMap</c>, then drop
+    /// <c>&lt;id&gt;.json</c> next to <c>latest.json</c>. The dashboard at
+    /// <c>http://localhost:8765/settings?version=&lt;id&gt;</c> edits the
+    /// non-frozen sections of this file in place; snapshots (anything except
+    /// <c>"latest"</c>) reject writes by default to keep them paired with
+    /// their ONNX.
     ///
     /// Reuses the field shapes from <see cref="TrainingSettings"/> so the
-    /// dashboard's existing JSON round-trip patterns continue to apply.
+    /// existing JSON round-trip patterns continue to apply.
     /// </summary>
     public sealed record VersionManifest
     {
@@ -50,8 +56,8 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
         public string PrefabResourcePath { get; init; } = "AiDriver/AiDriverAgent";
 
         // The sentinel "latest" means "newest-mtime RacingDriver-*.onnx under
-        // Assets/Resources/AiDriver/Policies/" — same semantics as the C#
-        // LatestVersionProfile's OnnxResourcePath.
+        // Assets/Resources/AiDriver/Policies/" — used by latest.json so the
+        // skill doesn't need to bump this string after every model swap.
         public string OnnxResourcePath { get; init; } = "latest";
 
         public bool RequiresSideSystems { get; init; } = true;

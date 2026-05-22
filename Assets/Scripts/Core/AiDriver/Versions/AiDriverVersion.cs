@@ -17,8 +17,9 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
     {
         /// <summary>
         /// First frozen snapshot. Captures the initial public canonical
-        /// (60-float observation layout + settings-driven reward shaper +
-        /// the physics tunings baked into <c>V1PhysicsProfile</c>).
+        /// (60-float observation layout + the manifest-driven reward and
+        /// physics values frozen at the time of the snapshot, persisted in
+        /// <c>Assets/_Bootstrap/Configs/Versions/v1.json</c>).
         /// Demonstrates the snapshot pattern; real regression use requires
         /// copying the matching prefab + ONNX per docs/snapshot-version.md.
         ///

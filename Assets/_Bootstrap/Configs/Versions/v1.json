@@ -1,6 +1,19 @@
 {
-  "_schemaVersion": 1,
-  "_note": "Tunable physics + reward + tire + episode + track parameters. Remove a field to fall back to baked default. Sections marked _frozen must match the ONNX or inference silently misbehaves. Edit via http://localhost:8765/settings or by hand; restart the trainer to apply.",
+  "_note": "Frozen V1 snapshot. Field-for-field copy of latest.json at the moment the snapshot was taken (Phase 4 manifest migration). Pair with the RacingDriver-v1.onnx + AiDriverAgentV1.prefab + racing_driver_v1.yaml triplet under docs/snapshot-version.md. MUTATING THIS FILE SILENTLY DESYNCS THE SNAPSHOT FROM ITS ONNX.",
+  "schemaVersion": 1,
+  "versionId": "v1",
+  "displayName": "V1 Snapshot",
+
+  "mlAgents": {
+    "behaviorName": "RacingDriverV1",
+    "configPath": "Assets/_Bootstrap/Configs/MlAgents/racing_driver_v1.yaml"
+  },
+
+  "runtime": {
+    "prefabResourcePath": "AiDriver/Legacy/AiDriverAgentV1",
+    "onnxResourcePath": "AiDriver/Policies/RacingDriver-v1",
+    "requiresSideSystems": true
+  },
 
   "episode": {
     "maxStepsPerEpisode": 12000,
@@ -68,8 +81,18 @@
     "puncturedGripFactor": 0.10
   },
 
+  "drafting": {
+    "maxDistance": 8.0,
+    "lateralTolerance": 2.5,
+    "dragReduction": 0.33,
+    "accelBoost": 0.09625,
+    "minActivationMS": 6.0,
+    "launchGraceSec": 3.0,
+    "attackTau": 0.05,
+    "releaseTau": 0.7
+  },
+
   "rewardShaper": {
-    "_note": "70+ reward-shaping constants. Bumping mid-training collapses policy; ramp gradually with a fresh run-id.",
     "overtakes": {
       "overtakeBonus": 4.6,
       "overtakeHoldPerSectorBase": 5.175,
@@ -156,7 +179,6 @@
   },
 
   "trackGeometry": {
-    "_note": "Some fields (cellSize, carPhysicsCellSize) are referenced inside Burst jobs as compile-time const; runtime override is ignored there and a warning logs at startup.",
     "cellSize": 3.0,
     "carPhysicsCellSize": 2.0,
     "laneHalfWidth": 0.405,
@@ -175,7 +197,6 @@
 
   "observation": {
     "_frozen": true,
-    "_warning": "Baked into the ONNX checkpoint. Changing requires retraining from scratch and rebuilding the prefab BehaviorParameters. Exposed for inspection only; mutation is ignored by the loader and rejected by the dashboard.",
     "floatsPerFrame": 60,
     "stackedFrames": 3,
     "wallRayCount": 7,
@@ -187,6 +208,99 @@
     "otherCarsAhead": 2,
     "otherCarsBehind": 2,
     "lateralGAtSaturation": 8.0,
-    "referenceHalfWidth": 1.5
+    "referenceHalfWidth": 1.5,
+    "layoutHash": "f9b250f6ddaebdc8"
+  },
+
+  "stages": [
+    {
+      "id": 0,
+      "name": "Stage0SoloWarmup",
+      "features": ["tire_overstress_penalty", "tire_observations"],
+      "expectedOpponentCount": 0,
+      "fuelSampling": "abundant",
+      "personalitySampling": "uniform"
+    },
+    {
+      "id": 1,
+      "name": "Stage1Grid",
+      "features": [
+        "overtake_reward", "got_passed_penalty", "micro_sector_position_bonus",
+        "lap_position_bonus", "car_hit_car_penalty", "draft_bonus",
+        "clean_driving_bonus", "hold_position_bonus", "opponent_observations",
+        "tire_overstress_penalty", "tire_observations"
+      ],
+      "expectedOpponentCount": 11,
+      "fuelSampling": "abundant",
+      "personalitySampling": "uniform"
+    },
+    {
+      "id": 2,
+      "name": "Stage2FuelScarcity",
+      "features": [
+        "overtake_reward", "got_passed_penalty", "micro_sector_position_bonus",
+        "lap_position_bonus", "car_hit_car_penalty", "draft_bonus",
+        "clean_driving_bonus", "hold_position_bonus",
+        "fuel_margin_penalty", "fuel_out_terminal",
+        "opponent_observations", "fuel_observations",
+        "tire_overstress_penalty", "tire_observations"
+      ],
+      "expectedOpponentCount": 11,
+      "fuelSampling": "scarcity",
+      "personalitySampling": "uniform"
+    },
+    {
+      "id": 3,
+      "name": "Stage3TireFuel",
+      "features": [
+        "overtake_reward", "got_passed_penalty", "micro_sector_position_bonus",
+        "lap_position_bonus", "car_hit_car_penalty", "draft_bonus",
+        "clean_driving_bonus", "hold_position_bonus",
+        "fuel_margin_penalty", "fuel_out_terminal",
+        "tire_overstress_penalty", "puncture_off_track_terminal",
+        "opponent_observations", "fuel_observations", "tire_observations"
+      ],
+      "expectedOpponentCount": 11,
+      "fuelSampling": "scarcity",
+      "personalitySampling": "uniform"
+    },
+    {
+      "id": 4,
+      "name": "Stage4AuthoredTwoCar",
+      "features": [
+        "overtake_reward", "got_passed_penalty", "micro_sector_position_bonus",
+        "lap_position_bonus", "car_hit_car_penalty", "draft_bonus",
+        "clean_driving_bonus", "hold_position_bonus",
+        "fuel_margin_penalty", "fuel_out_terminal",
+        "tire_overstress_penalty", "puncture_off_track_terminal",
+        "opponent_observations", "fuel_observations", "tire_observations",
+        "personality_observations"
+      ],
+      "expectedOpponentCount": 11,
+      "fuelSampling": "scarcity",
+      "personalitySampling": "archetype"
+    },
+    {
+      "id": 5,
+      "name": "Stage5PackSelfPlay",
+      "features": [
+        "overtake_reward", "got_passed_penalty", "micro_sector_position_bonus",
+        "lap_position_bonus", "car_hit_car_penalty", "draft_bonus",
+        "clean_driving_bonus", "hold_position_bonus",
+        "fuel_margin_penalty", "fuel_out_terminal",
+        "tire_overstress_penalty",
+        "opponent_observations", "fuel_observations", "tire_observations",
+        "personality_observations", "front_cone_ray_observations"
+      ],
+      "expectedOpponentCount": 11,
+      "fuelSampling": "scarcity",
+      "personalitySampling": "archetype"
+    }
+  ],
+
+  "codeModules": {
+    "physicsModel": "Default",
+    "observationWriter": "RacingV1",
+    "rewardShaper": "Composite"
   }
 }

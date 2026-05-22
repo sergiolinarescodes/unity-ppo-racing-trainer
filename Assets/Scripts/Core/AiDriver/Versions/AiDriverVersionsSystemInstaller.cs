@@ -1,8 +1,6 @@
 using System.Collections.Generic;
 using UnityPpoRacingTrainer.Core.AiDriver.Training;
-using UnityPpoRacingTrainer.Core.AiDriver.Versions.Latest;
 using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
-using UnityPpoRacingTrainer.Core.AiDriver.Versions.V1;
 using Reflex.Core;
 using Unidad.Core.Bootstrap;
 using Unidad.Core.Testing;
@@ -16,13 +14,27 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
     /// <c>AiDriverPolicySystemInstaller</c> so the policy service can consume
     /// the bound profile in its ctor.
     ///
-    /// Currently registers a single profile (<see cref="LatestVersionProfile"/>).
-    /// When a new snapshot is frozen, register the prior canonical here under
-    /// its numbered <see cref="AiDriverVersion"/> entry and keep
-    /// <see cref="LatestVersionProfile"/> pointed at the new canonical.
+    /// Every version is manifest-driven (Phase 4+): each
+    /// <see cref="AiDriverVersion"/> entry maps to a JSON file under
+    /// <c>Assets/_Bootstrap/Configs/Versions/</c>, loaded by
+    /// <see cref="VersionManifestLoader"/>. Adding a new snapshot is two steps:
+    /// add an entry to <see cref="VersionEnumMap"/> below and drop a new
+    /// <c>&lt;id&gt;.json</c> alongside <c>latest.json</c>. No new code-side
+    /// profile class needed — <see cref="ManifestBackedVersionProfile"/>
+    /// adapts any well-formed manifest to <see cref="IAiDriverVersionProfile"/>.
     /// </summary>
     public sealed class AiDriverVersionsSystemInstaller : ISystemInstaller
     {
+        // Picker between Unity-serialized AiDriverVersion enum and the manifest
+        // file's version_id string. Add a new (enum, id) pair when freezing a
+        // new snapshot; the corresponding <id>.json manifest is the rest of
+        // the work.
+        private static readonly (AiDriverVersion Enum, string Id)[] VersionEnumMap =
+        {
+            (AiDriverVersion.Latest, "latest"),
+            (AiDriverVersion.V1, "v1"),
+        };
+
         private readonly AiDriverVersion _activeVersion;
 
         public AiDriverVersionsSystemInstaller(AiDriverVersion activeVersion)
@@ -32,52 +44,35 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
 
         public void Install(ContainerBuilder builder)
         {
-            // LatestVersionProfile captures a Func<IRewardShaper> instead of
-            // resolving up-front — resolving IRewardShaper here triggers a DI
-            // cycle (RewardShaper → IActiveStageProfile → IAiDriverVersionProfile
-            // → us). Deferred resolution lets every installer register first; the
-            // property getter then resolves cleanly. NullRewardShaper.Instance
-            // is the fallback when no shaper is registered (AIDRIVER_TRAINING
-            // off in a player build).
-            builder.AddSingleton(c => new LatestVersionProfile(
-                    () => c.TryResolveOptional<IRewardShaper>() ?? NullRewardShaper.Instance),
-                typeof(LatestVersionProfile));
-
-            // V1 snapshot: same lazy-resolution wiring as Latest. The frozen
-            // profile is registered so picking AiDriverVersion.V1 in the
-            // bootstrap resolves cleanly. The matching prefab + ONNX are
-            // Editor-side artifacts (see docs/snapshot-version.md).
-            builder.AddSingleton(c => new V1VersionProfile(
-                    () => c.TryResolveOptional<IRewardShaper>() ?? NullRewardShaper.Instance),
-                typeof(V1VersionProfile));
-
-            // Registry holds every known profile keyed by enum. Phase 2 flip:
-            // when the manifest folder contains a "latest" entry, the active
-            // Latest profile becomes the data-driven ManifestBackedVersionProfile
-            // (sourced from Assets/_Bootstrap/Configs/Versions/latest.json).
-            // Falls back to the historical C# LatestVersionProfile if the
-            // manifest is missing or fails to load — ensures bootstrap never
-            // hard-fails on a malformed manifest. The bit-identical parity is
-            // locked by ManifestParityTests.
+            // Registry holds one ManifestBackedVersionProfile per known
+            // version_id, keyed by the legacy AiDriverVersion enum. Each
+            // profile captures a Func<IRewardShaper> instead of resolving
+            // up-front to dodge the DI cycle (profile → shaper →
+            // IActiveStageProfile → profile). NullRewardShaper.Instance is
+            // the fallback when no real shaper is registered (player /
+            // inference builds with AIDRIVER_TRAINING off).
             builder.AddSingleton(c =>
             {
                 var registry = new AiDriverVersionRegistry();
                 var manifests = c.TryResolveOptional<IReadOnlyDictionary<string, VersionManifest>>();
-                IAiDriverVersionProfile latest;
-                if (manifests != null && manifests.TryGetValue("latest", out var latestManifest))
+                if (manifests == null)
                 {
-                    latest = new ManifestBackedVersionProfile(
-                        latestManifest,
+                    Debug.LogError("[AiDriverVersionsSystemInstaller] manifest dictionary missing — VersionManifestSystemInstaller must precede this installer.");
+                    return registry;
+                }
+                foreach (var (versionEnum, versionId) in VersionEnumMap)
+                {
+                    if (!manifests.TryGetValue(versionId, out var manifest))
+                    {
+                        Debug.LogError($"[AiDriverVersionsSystemInstaller] manifest '{versionId}.json' missing — {versionEnum} will not resolve.");
+                        continue;
+                    }
+                    var profile = new ManifestBackedVersionProfile(
+                        manifest,
                         () => c.TryResolveOptional<IRewardShaper>() ?? NullRewardShaper.Instance,
-                        AiDriverVersion.Latest);
+                        versionEnum);
+                    registry.Register(versionEnum, profile);
                 }
-                else
-                {
-                    Debug.LogWarning("[AiDriverVersionsSystemInstaller] manifest \"latest\" not found — falling back to C# LatestVersionProfile.");
-                    latest = c.Resolve<LatestVersionProfile>();
-                }
-                registry.Register(AiDriverVersion.Latest, latest);
-                registry.Register(AiDriverVersion.V1, c.Resolve<V1VersionProfile>());
                 return registry;
             }, typeof(AiDriverVersionRegistry));
 

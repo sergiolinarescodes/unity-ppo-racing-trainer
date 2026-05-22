@@ -1,78 +1,60 @@
 using System;
-using System.IO;
-using Newtonsoft.Json;
 using UnityEngine;
+using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 
 namespace UnityPpoRacingTrainer.Core.AiDriver.Config
 {
     /// <summary>
-    /// Reads <c>settings.json</c> at the project root (sibling of <c>Assets/</c>)
-    /// and exposes the parsed <see cref="TrainingSettings"/>. Tolerates missing
-    /// file, malformed JSON, and partial fields by falling back to baked defaults.
+    /// Loads <see cref="TrainingSettings"/> by projecting the canonical
+    /// <c>Assets/_Bootstrap/Configs/Versions/latest.json</c> manifest into
+    /// the legacy sub-record shape. The dashboard at <c>/settings</c> edits
+    /// the manifest; downstream services (<c>RewardShaper</c>,
+    /// <c>TirePhysicsService</c>, etc.) still consume <c>ITrainingSettingsService</c>
+    /// without knowing where the values came from.
+    ///
+    /// Phase 3: <c>settings.json</c> at the repo root is retired; this
+    /// service no longer reads it. The manifest's <c>physics</c> /
+    /// <c>tirePhysics</c> / <c>rewardShaper</c> / <c>trackGeometry</c> /
+    /// <c>observation</c> / <c>episode</c> sub-records are the same POCO
+    /// types as <see cref="TrainingSettings"/>'s, so the projection is a
+    /// plain field copy — no JSON re-parse.
     /// </summary>
     internal sealed class TrainingSettingsService : ITrainingSettingsService
     {
-        private const string SettingsFileName = "settings.json";
+        private const string ActiveVersionId = "latest";
 
-        private readonly string _settingsPath;
         private TrainingSettings _current;
 
         public TrainingSettingsService()
         {
-            // Application.dataPath ends with .../Assets; settings.json sits next to it.
-            _settingsPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..", SettingsFileName));
-            _current = LoadFromDisk();
+            _current = LoadFromManifest();
         }
 
         public TrainingSettings Current => _current;
 
-        public void Reload() => _current = LoadFromDisk();
+        public void Reload() => _current = LoadFromManifest();
 
-        private TrainingSettings LoadFromDisk()
+        private static TrainingSettings LoadFromManifest()
         {
-            if (!File.Exists(_settingsPath))
+            var manifests = VersionManifestLoader.LoadAll();
+            if (!manifests.TryGetValue(ActiveVersionId, out var m))
             {
-                Debug.Log($"[TrainingSettings] {SettingsFileName} not found at {_settingsPath}; using baked defaults.");
+                Debug.LogWarning($"[TrainingSettings] manifest '{ActiveVersionId}' not found under {VersionManifestLoader.DefaultRelativeFolder}; using baked defaults.");
                 return new TrainingSettings();
             }
-
-            string json;
-            try
+            var settings = new TrainingSettings
             {
-                json = File.ReadAllText(_settingsPath);
-            }
-            catch (IOException ex)
-            {
-                Debug.LogError($"[TrainingSettings] Failed to read {SettingsFileName}: {ex.Message}; using baked defaults.");
-                return new TrainingSettings();
-            }
-
-            try
-            {
-                var settings = JsonConvert.DeserializeObject<TrainingSettings>(json, new JsonSerializerSettings
-                {
-                    MissingMemberHandling = MissingMemberHandling.Ignore,
-                    NullValueHandling = NullValueHandling.Ignore,
-                });
-                if (settings == null)
-                {
-                    Debug.LogWarning($"[TrainingSettings] {SettingsFileName} parsed to null; using baked defaults.");
-                    return new TrainingSettings();
-                }
-                Debug.Log($"[TrainingSettings] Loaded from {_settingsPath} (schemaVersion={settings.SchemaVersion}).");
-                WarnOnFrozenObservationDivergence(settings);
-                return settings;
-            }
-            catch (JsonException ex)
-            {
-                Debug.LogError($"[TrainingSettings] Parse error in {SettingsFileName}: {ex.Message}; using baked defaults.");
-                return new TrainingSettings();
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[TrainingSettings] Unexpected error loading {SettingsFileName}: {ex.Message}; using baked defaults.");
-                return new TrainingSettings();
-            }
+                SchemaVersion = m.SchemaVersion,
+                Episode = m.Episode,
+                Physics = m.Physics,
+                TirePhysics = m.TirePhysics,
+                RewardShaper = m.RewardShaper,
+                TrackGeometry = m.TrackGeometry,
+                Observation = m.Observation,
+            };
+            Debug.Log($"[TrainingSettings] projected from manifest '{ActiveVersionId}' (schemaVersion={settings.SchemaVersion}).");
+            WarnOnFrozenObservationDivergence(settings);
+            return settings;
         }
 
         // The observation section is frozen per ONNX checkpoint. Warn if the

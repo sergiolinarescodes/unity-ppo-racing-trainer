@@ -64,73 +64,191 @@ PINNED_FILE = TELEMETRY_DIR / "races" / ".pinned"
 _RACE_PINS = {}  # race_id -> expiry epoch
 _RACE_PINS_LOCK = threading.Lock()
 
-# ---------- settings.json round-trip ----------
-SETTINGS_FILE = ROOT / "settings.json"
-SETTINGS_BACKUP = ROOT / "settings.json.bak"
+# ---------- Per-version manifest round-trip ----------
+# Phase 2b: dashboard now edits the per-version JSON manifests under
+# Assets/_Bootstrap/Configs/Versions/<id>.json instead of the legacy
+# settings.json at the repo root. Each manifest is self-contained
+# (physics + tire + drafting + rewards + stages + observation layout
+# selection + ml_agents / runtime keys). Snapshots (anything other than
+# version_id == "latest") are immutable by default — POSTs return 409
+# unless ?force=1 is set, because mutating a frozen snapshot silently
+# un-snapshots it relative to its committed ONNX.
+MANIFESTS_DIR = ROOT / "Assets" / "_Bootstrap" / "Configs" / "Versions"
 _SETTINGS_LOCK = threading.Lock()
 
-# Sections whose fields are frozen per ONNX checkpoint. POST mutations to any
-# field inside these sections are rejected. Mirrors observation._frozen in the
-# JSON file and the C# ObservationSettings._frozen note.
-_SETTINGS_FROZEN_SECTIONS = {"observation"}
+# Sections + fields whose values are baked into the ONNX checkpoint or
+# the loader's identity contract. POST mutations to any field under these
+# sections are rejected. observation owns the float layout the ONNX was
+# trained against; mlAgents pins behavior_name + yaml path that the
+# Python trainer matches verbatim; runtime owns the prefab + ONNX
+# resource paths. Mirrors observation._frozen in the schema and the C#
+# ObservationSettings._frozen note.
+_MANIFEST_FROZEN_SECTIONS = {"observation", "mlAgents", "runtime"}
+
+# Top-level keys you must NEVER touch via the dashboard regardless of
+# section gating — mutating these silently re-keys the manifest.
+_MANIFEST_FROZEN_TOP_LEVEL = {"schemaVersion", "versionId"}
 
 
-def _load_settings_json():
-    """Read settings.json. Return defaults dict if missing/malformed."""
-    if not SETTINGS_FILE.exists():
-        return {}
+def _safe_version_id(version):
+    """Sanitize a query-string version id so the filesystem path can't
+    escape MANIFESTS_DIR. Allows ascii letters, digits, underscore,
+    dash, and dot — same surface as a typical filename stem."""
+    if not version or not isinstance(version, str):
+        return None
+    if len(version) > 64:
+        return None
+    allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-."
+    if any(c not in allowed for c in version):
+        return None
+    if version in (".", ".."):
+        return None
+    return version
+
+
+def _manifest_path(version):
+    """Return MANIFESTS_DIR/<version>.json after sanitization. None if
+    the id is malformed."""
+    safe = _safe_version_id(version)
+    if not safe:
+        return None
+    return MANIFESTS_DIR / f"{safe}.json"
+
+
+def _load_manifest(version):
+    """Read a single manifest by version id. Returns dict or None."""
+    path = _manifest_path(version)
+    if not path or not path.exists():
+        return None
     try:
-        return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return {}
+        return None
 
 
-def _has_frozen_diff(new_settings, old_settings):
-    """Return field path of the first frozen-section mutation, or None."""
-    for section in _SETTINGS_FROZEN_SECTIONS:
-        new_sec = new_settings.get(section, {})
-        old_sec = old_settings.get(section, {})
+def _list_manifests():
+    """List every manifest under MANIFESTS_DIR. Returns list of
+    {id, displayName} pairs sorted with latest first, then alphabetical.
+    Tolerates malformed JSON — bad files are skipped silently."""
+    out = []
+    if not MANIFESTS_DIR.exists():
+        return out
+    for jf in sorted(MANIFESTS_DIR.glob("*.json")):
+        try:
+            rec = json.loads(jf.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        vid = rec.get("versionId") or jf.stem
+        out.append({
+            "id": vid,
+            "displayName": rec.get("displayName", vid),
+            "frozen": vid != "latest",
+        })
+    out.sort(key=lambda r: (r["id"] != "latest", r["id"]))
+    return out
+
+
+def _has_frozen_diff(new_data, old_data):
+    """Return field path of the first frozen-section mutation, or None.
+    Also rejects mutations to top-level identity keys (schemaVersion,
+    versionId)."""
+    for key in _MANIFEST_FROZEN_TOP_LEVEL:
+        if new_data.get(key) != old_data.get(key):
+            return key
+    for section in _MANIFEST_FROZEN_SECTIONS:
+        new_sec = new_data.get(section, {})
+        old_sec = old_data.get(section, {})
         if not isinstance(new_sec, dict) or not isinstance(old_sec, dict):
             continue
-        for key, value in new_sec.items():
-            if key.startswith("_"):
+        for k, v in new_sec.items():
+            if k.startswith("_"):
                 continue
-            if old_sec.get(key) != value:
-                return f"{section}.{key}"
+            if old_sec.get(k) != v:
+                return f"{section}.{k}"
     return None
 
 
-def _save_settings_json(data):
-    """Atomic write with one-deep backup. Reject frozen-section mutations."""
+def _save_manifest(version, data, force=False):
+    """Atomic write with one-deep backup. Rejects frozen-section
+    mutations and (unless force) rejects writes to any version other
+    than 'latest'."""
     if not isinstance(data, dict):
-        return False, "settings payload must be a JSON object"
+        return False, "manifest payload must be a JSON object", 400
+    path = _manifest_path(version)
+    if not path:
+        return False, "invalid version id", 400
+    is_snapshot = version != "latest"
+    if is_snapshot and not force:
+        return (False,
+                "snapshots are immutable; edit latest.json and snapshot a new "
+                "id. Pass ?force=1 if you really need to overwrite this file.",
+                409)
     with _SETTINGS_LOCK:
-        current = _load_settings_json()
+        current = _load_manifest(version) or {}
+        # Enforce versionId identity — if the payload claims a different id,
+        # treat it as a frozen-key mutation. _has_frozen_diff catches it,
+        # but explicit short-circuit avoids ambiguous error messages.
+        if "versionId" in data and data["versionId"] != version and current:
+            return False, f"payload versionId '{data['versionId']}' doesn't match URL '{version}'", 400
         bad = _has_frozen_diff(data, current)
         if bad:
-            return False, f"{bad} is frozen (baked into the ONNX); mutation rejected"
+            return False, f"{bad} is frozen (baked into ONNX or identity); mutation rejected", 400
         try:
-            tmp = SETTINGS_FILE.with_suffix(".json.tmp")
+            MANIFESTS_DIR.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-            if SETTINGS_FILE.exists():
-                # One rolling backup; previous backup is replaced atomically.
-                SETTINGS_FILE.replace(SETTINGS_BACKUP)
-            tmp.replace(SETTINGS_FILE)
-            return True, None
+            bak = path.with_suffix(".json.bak")
+            if path.exists():
+                # One rolling backup, replaced atomically per save.
+                path.replace(bak)
+            tmp.replace(path)
+            return True, None, 200
         except Exception as e:
-            return False, f"write failed: {e}"
+            return False, f"write failed: {e}", 500
 
 
-def _reset_settings_json():
-    """Restore from settings.json.bak if present; else leave alone."""
+def _reset_manifest(version):
+    """Restore <version>.json from <version>.json.bak if present."""
+    path = _manifest_path(version)
+    if not path:
+        return False, "invalid version id"
+    bak = path.with_suffix(".json.bak")
     with _SETTINGS_LOCK:
-        if not SETTINGS_BACKUP.exists():
-            return False, "no backup to restore (no prior Save in this session)"
+        if not bak.exists():
+            return False, "no backup to restore (no prior save for this version)"
         try:
-            SETTINGS_BACKUP.replace(SETTINGS_FILE)
+            bak.replace(path)
             return True, None
         except Exception as e:
             return False, f"restore failed: {e}"
+
+
+def _snapshot_manifest(new_version):
+    """Copy latest.json → <new_version>.json. Fails if the target
+    already exists (snapshots are immutable; pick a new id) or if
+    latest.json doesn't exist yet."""
+    safe = _safe_version_id(new_version)
+    if not safe:
+        return False, "invalid snapshot id (letters/digits/_-. only, max 64 chars)"
+    if safe == "latest":
+        return False, "'latest' is reserved for the canonical; pick a different id"
+    src = MANIFESTS_DIR / "latest.json"
+    dst = MANIFESTS_DIR / f"{safe}.json"
+    if not src.exists():
+        return False, "latest.json missing; nothing to snapshot"
+    if dst.exists():
+        return False, f"{safe}.json already exists — snapshots are immutable"
+    with _SETTINGS_LOCK:
+        try:
+            data = json.loads(src.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                return False, "latest.json is not a JSON object"
+            data["versionId"] = safe
+            data["displayName"] = data.get("displayName", safe)
+            dst.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            return True, None
+        except Exception as e:
+            return False, f"snapshot failed: {e}"
 
 
 SETTINGS_HTML = """<!doctype html>
@@ -141,12 +259,17 @@ SETTINGS_HTML = """<!doctype html>
 <style>
   :root { color-scheme: dark; }
   body { font-family: ui-monospace, Menlo, Consolas, monospace; background: #0c0d10; color: #d8dde2; margin: 0; padding: 2rem 1.5rem 5rem; max-width: 980px; margin-inline: auto; }
-  header { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1.25rem; }
+  header { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
   h1 { font-size: 1.25rem; font-weight: 600; margin: 0; }
   nav a { color: #7aa6da; text-decoration: none; margin-right: 1rem; font-size: 0.85rem; }
   nav a:hover { text-decoration: underline; }
+  .picker { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+  .picker label { font-size: 0.78rem; color: #b3bcc6; letter-spacing: 0.05em; text-transform: uppercase; }
+  .picker select { background: #14171b; border: 1px solid #2c3138; color: #e6ebf0; padding: 0.3rem 0.5rem; border-radius: 3px; font-family: inherit; font-size: 0.85rem; }
+  .picker .snapshot-btn { background: #2c3138; color: #e6ebf0; border: 1px solid #3a4049; border-radius: 3px; padding: 0.3rem 0.7rem; font-size: 0.78rem; cursor: pointer; }
   .note { background: #1a1d22; border-left: 3px solid #5a8ed1; padding: 0.6rem 0.9rem; margin: 0.5rem 0 1.25rem; font-size: 0.85rem; color: #b3bcc6; }
   .frozen-note { border-left-color: #d18555; color: #d6b39a; }
+  .snapshot-banner { background: #2a2316; border-left: 3px solid #d18555; padding: 0.65rem 0.9rem; margin: 0.5rem 0 1.25rem; font-size: 0.85rem; color: #d6b39a; }
   details { background: #14171b; border: 1px solid #23272d; border-radius: 4px; margin-bottom: 0.6rem; }
   summary { cursor: pointer; padding: 0.65rem 0.9rem; font-weight: 600; user-select: none; }
   summary:hover { background: #181b20; }
@@ -161,6 +284,7 @@ SETTINGS_HTML = """<!doctype html>
   button { background: #2c3138; color: #e6ebf0; border: 1px solid #3a4049; border-radius: 3px; padding: 0.45rem 1rem; font-family: inherit; cursor: pointer; }
   button.primary { background: #2f5a8f; border-color: #3a6ba3; }
   button:hover { filter: brightness(1.15); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
   #toast { position: fixed; bottom: 4.5rem; right: 1.5rem; background: #1a1d22; border: 1px solid #2c3138; padding: 0.5rem 0.9rem; border-radius: 3px; font-size: 0.82rem; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
   #toast.show { opacity: 1; }
   #toast.error { border-color: #c95d3c; color: #f0a48d; }
@@ -174,9 +298,17 @@ SETTINGS_HTML = """<!doctype html>
     <a href="/races">races</a>
     <a href="/authored">authored circuits</a>
   </nav>
+  <div class="picker">
+    <label for="version-select">version</label>
+    <select id="version-select"></select>
+    <button type="button" class="snapshot-btn" id="snapshot-btn" title="Copy latest.json to a new snapshot id">snapshot latest</button>
+  </div>
 </header>
-<div class="note">
-  Edits write to <code>settings.json</code> at the repo root. <b>Changes apply on next trainer restart</b> — the running supervisor still uses its already-loaded values until you Ctrl+C and relaunch. A one-deep backup at <code>settings.json.bak</code> is created on every Save.
+<div id="banner" class="note">
+  Edits write to <code>Assets/_Bootstrap/Configs/Versions/&lt;id&gt;.json</code>. <b>Changes apply on next trainer restart</b> — the running supervisor still uses its already-loaded values until you Ctrl+C and relaunch. A one-deep backup at <code>&lt;id&gt;.json.bak</code> is created on every Save.
+</div>
+<div id="snapshot-banner" class="snapshot-banner" hidden>
+  Viewing a frozen snapshot. Edits are blocked unless you accept the warning to overwrite — snapshots are paired with a specific ONNX, and mutating them silently desyncs the pair. Switch to <code>latest</code> to edit.
 </div>
 <form id="settings-form"></form>
 <div class="actions">
@@ -185,11 +317,51 @@ SETTINGS_HTML = """<!doctype html>
 </div>
 <div id="toast"></div>
 <script>
-const FROZEN_SECTIONS = new Set(["observation"]);
+const FROZEN_SECTIONS = new Set(["observation", "mlAgents", "runtime"]);
+const FROZEN_TOP_LEVEL = new Set(["schemaVersion", "versionId"]);
+let activeVersion = "latest";
+let activeIsSnapshot = false;
 
-async function load() {
-  const res = await fetch("/api/settings");
+function toast(msg, isErr) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.toggle("error", !!isErr);
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 3500);
+}
+
+async function loadVersions() {
+  const res = await fetch("/api/versions");
+  const body = await res.json();
+  const sel = document.getElementById("version-select");
+  sel.innerHTML = "";
+  for (const v of (body.versions || [])) {
+    const opt = document.createElement("option");
+    opt.value = v.id;
+    opt.textContent = v.displayName + (v.frozen ? " (frozen)" : "");
+    sel.appendChild(opt);
+  }
+  // URL ?version= takes precedence so deep links land on the right form.
+  const qp = new URLSearchParams(location.search);
+  const requested = qp.get("version");
+  if (requested && [...sel.options].some(o => o.value === requested)) {
+    sel.value = requested;
+  } else if ([...sel.options].some(o => o.value === "latest")) {
+    sel.value = "latest";
+  }
+  activeVersion = sel.value || "latest";
+  activeIsSnapshot = activeVersion !== "latest";
+}
+
+async function loadManifest() {
+  const res = await fetch(`/api/settings?version=${encodeURIComponent(activeVersion)}`);
+  if (!res.ok) {
+    toast(`load failed (${res.status})`, true);
+    return;
+  }
   const data = await res.json();
+  document.getElementById("snapshot-banner").hidden = !activeIsSnapshot;
+  document.getElementById("save-btn").disabled = false;  // server enforces the gate
   renderForm(data);
 }
 
@@ -198,7 +370,32 @@ function renderForm(data) {
   form.innerHTML = "";
   for (const [section, body] of Object.entries(data)) {
     if (section.startsWith("_")) continue;
-    if (typeof body !== "object" || body === null || Array.isArray(body)) continue;
+    if (FROZEN_TOP_LEVEL.has(section)) {
+      // Top-level identity (schemaVersion, versionId) — show as read-only metadata, not a section.
+      const det = document.createElement("details");
+      det.open = false;
+      const sum = document.createElement("summary");
+      sum.textContent = section;
+      const b = document.createElement("span");
+      b.className = "frozen-badge";
+      b.textContent = "identity — never edit";
+      sum.appendChild(b);
+      det.appendChild(sum);
+      const body2 = document.createElement("div");
+      body2.className = "section-body";
+      body2.appendChild(renderField(`${section}`, body, true, "identity field — write protected"));
+      det.appendChild(body2);
+      form.appendChild(det);
+      continue;
+    }
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      // Top-level scalar (e.g. displayName) — render as a single field.
+      const wrap = document.createElement("div");
+      wrap.style.marginBottom = "0.6rem";
+      wrap.appendChild(renderField(section, body, false));
+      form.appendChild(wrap);
+      continue;
+    }
     form.appendChild(renderSection(section, body, FROZEN_SECTIONS.has(section)));
   }
 }
@@ -248,7 +445,7 @@ function renderField(path, value, disabled, hint) {
   const wrap = document.createElement("div");
   wrap.className = "field";
   const label = document.createElement("label");
-  label.textContent = path.split(".").slice(1).join(".");
+  label.textContent = path.includes(".") ? path.split(".").slice(1).join(".") : path;
   if (hint) label.title = hint;
   const input = document.createElement("input");
   input.dataset.path = path;
@@ -283,13 +480,11 @@ function collectForm() {
 }
 
 async function fetchRaw() {
-  const res = await fetch("/api/settings");
+  const res = await fetch(`/api/settings?version=${encodeURIComponent(activeVersion)}`);
   return await res.json();
 }
 
 function mergeOverFrozen(base, edits) {
-  // Preserve frozen sections + metadata keys exactly from the base, overlay
-  // edits everywhere else.
   const out = JSON.parse(JSON.stringify(base));
   function walk(target, edit) {
     for (const [k, v] of Object.entries(edit)) {
@@ -301,48 +496,77 @@ function mergeOverFrozen(base, edits) {
     }
   }
   walk(out, edits);
-  // Restore frozen sections from base
+  // Restore frozen sections + top-level identity from base.
   for (const sec of FROZEN_SECTIONS) {
     if (sec in base) out[sec] = base[sec];
+  }
+  for (const key of FROZEN_TOP_LEVEL) {
+    if (key in base) out[key] = base[key];
   }
   return out;
 }
 
-function toast(msg, isErr) {
-  const t = document.getElementById("toast");
-  t.textContent = msg;
-  t.classList.toggle("error", !!isErr);
-  t.classList.add("show");
-  setTimeout(() => t.classList.remove("show"), 3500);
-}
+document.getElementById("version-select").addEventListener("change", (e) => {
+  activeVersion = e.target.value;
+  activeIsSnapshot = activeVersion !== "latest";
+  const url = new URL(location);
+  url.searchParams.set("version", activeVersion);
+  history.replaceState({}, "", url.toString());
+  loadManifest();
+});
 
 document.getElementById("save-btn").addEventListener("click", async () => {
   const base = await fetchRaw();
   const edits = collectForm();
   const merged = mergeOverFrozen(base, edits);
-  const res = await fetch("/api/settings", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(merged) });
+  let url = `/api/settings?version=${encodeURIComponent(activeVersion)}`;
+  if (activeIsSnapshot) {
+    if (!confirm(`Overwrite frozen snapshot "${activeVersion}.json"? This silently desyncs the snapshot from its committed ONNX. Continue?`)) return;
+    url += "&force=1";
+  }
+  const res = await fetch(url, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(merged) });
   const body = await res.json();
   if (body.ok) {
-    toast("settings.json saved");
-    load();
+    toast(`${activeVersion}.json saved`);
+    loadManifest();
   } else {
-    toast("save failed: " + (body.error || "unknown"), true);
+    toast(`save failed: ${body.error || "unknown"}`, true);
   }
 });
 
 document.getElementById("reset-btn").addEventListener("click", async () => {
-  if (!confirm("Restore settings.json from settings.json.bak?")) return;
-  const res = await fetch("/api/settings/reset", { method: "POST" });
+  if (!confirm(`Restore ${activeVersion}.json from its .bak?`)) return;
+  const res = await fetch(`/api/settings/reset?version=${encodeURIComponent(activeVersion)}`, { method: "POST" });
   const body = await res.json();
   if (body.ok) {
     toast("restored from backup");
-    load();
+    loadManifest();
   } else {
-    toast("reset failed: " + (body.error || "unknown"), true);
+    toast(`reset failed: ${body.error || "unknown"}`, true);
   }
 });
 
-load();
+document.getElementById("snapshot-btn").addEventListener("click", async () => {
+  const id = prompt("New snapshot id (letters/digits/_-., e.g. 'v1', 'v2-cold'):");
+  if (!id) return;
+  const res = await fetch(`/api/versions/snapshot?id=${encodeURIComponent(id)}`, { method: "POST" });
+  const body = await res.json();
+  if (body.ok) {
+    toast(`snapshot ${id} created`);
+    await loadVersions();
+    document.getElementById("version-select").value = id;
+    activeVersion = id;
+    activeIsSnapshot = true;
+    loadManifest();
+  } else {
+    toast(`snapshot failed: ${body.error || "unknown"}`, true);
+  }
+});
+
+(async () => {
+  await loadVersions();
+  await loadManifest();
+})();
 </script>
 </body>
 </html>
@@ -5050,8 +5274,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/settings":
             self._send(200, SETTINGS_HTML, "text/html")
             return
+        if path == "/api/versions":
+            self._send(200, json.dumps({"versions": _list_manifests()}))
+            return
         if path == "/api/settings":
-            self._send(200, json.dumps(_load_settings_json()))
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            version = (qs.get("version") or ["latest"])[0]
+            data = _load_manifest(version)
+            if data is None:
+                self._send(404, json.dumps({"error": f"manifest not found: {version}"}))
+                return
+            self._send(200, json.dumps(data))
             return
         if path == "/authored":
             self._send(200, AUTHORED_HTML, "text/html")
@@ -5173,22 +5406,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send(500, json.dumps({"ok": False, "error": str(e)}))
             return
         if path == "/api/settings":
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            version = (qs.get("version") or ["latest"])[0]
+            force = (qs.get("force") or ["0"])[0] in ("1", "true", "yes")
             length = int(self.headers.get("Content-Length", "0"))
             try:
                 data = json.loads(self.rfile.read(length).decode("utf-8"))
             except Exception as e:
                 self._send(400, json.dumps({"ok": False, "error": f"invalid JSON: {e}"}))
                 return
-            ok, err = _save_settings_json(data)
+            ok, err, status = _save_manifest(version, data, force=force)
             if ok:
-                self._send(200, json.dumps({"ok": True}))
+                self._send(200, json.dumps({"ok": True, "version": version}))
+            else:
+                self._send(status, json.dumps({"ok": False, "error": err}))
+            return
+        if path == "/api/settings/reset":
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            version = (qs.get("version") or ["latest"])[0]
+            ok, err = _reset_manifest(version)
+            if ok:
+                self._send(200, json.dumps({"ok": True, "version": version}))
             else:
                 self._send(400, json.dumps({"ok": False, "error": err}))
             return
-        if path == "/api/settings/reset":
-            ok, err = _reset_settings_json()
+        if path == "/api/versions/snapshot":
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            new_id = (qs.get("id") or [""])[0]
+            ok, err = _snapshot_manifest(new_id)
             if ok:
-                self._send(200, json.dumps({"ok": True}))
+                self._send(200, json.dumps({"ok": True, "version": new_id}))
             else:
                 self._send(400, json.dumps({"ok": False, "error": err}))
             return

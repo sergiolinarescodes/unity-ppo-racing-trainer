@@ -1,5 +1,5 @@
 {
-  "_note": "Canonical version manifest. Mirrors AiDriverPhysicsDefaults.Latest + StageProfiles.cs + Drafting.cs + RewardShaper.cs values at the time of Phase 1 scaffolding. NOT YET CONSUMED — LatestVersionProfile.cs still authoritative. Phase 2+ flip the switch.",
+  "_note": "Canonical version manifest. Single source of truth for the active Latest driver: physics + drafting + reward weights + curriculum stages + observation layout selection. Edit via http://localhost:8765/settings, or by hand. The trainer reads this at boot via VersionManifestSystemInstaller; restart to apply.",
   "schemaVersion": 1,
   "versionId": "latest",
   "displayName": "Latest",
@@ -208,7 +208,8 @@
     "otherCarsAhead": 2,
     "otherCarsBehind": 2,
     "lateralGAtSaturation": 8.0,
-    "referenceHalfWidth": 1.5
+    "referenceHalfWidth": 1.5,
+    "layoutHash": "f9b250f6ddaebdc8"
   },
 
   "stages": [

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityPpoRacingTrainer.Core.AiDriver.Loop;
 using UnityPpoRacingTrainer.Core.AiDriver.Physics;
+using UnityPpoRacingTrainer.Core.AiDriver.Training;
 using UnityPpoRacingTrainer.Core.Terrain;
 using UnityPpoRacingTrainer.Core.Terrain.Scenarios;
 using UnityPpoRacingTrainer.Core.Track;
@@ -171,9 +172,14 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy.Scenarios
             _carSim = new CarSimulationService(_eventBus, _trackQuery);
             _profileRegistry = new DriverProfileRegistry();
             // Scenario constructs the policy directly (no DI container). Latest
-            // profile with a null reward shaper is the right fit for a diagnostic
-            // heuristic-lap scene; obs/physics route through the canonical path.
-            var versionProfile = new Versions.Latest.LatestVersionProfile(() => new Versions.Latest.NullRewardShaper());
+            // manifest with a null reward shaper is the right fit for a
+            // diagnostic heuristic-lap scene; obs/physics route through the
+            // canonical path.
+            var manifests = Versions.Manifest.VersionManifestLoader.LoadAll();
+            var versionProfile = new Versions.Manifest.ManifestBackedVersionProfile(
+                manifests["latest"],
+                () => NullRewardShaper.Instance,
+                Versions.AiDriverVersion.Latest);
             _policyService = new AiDriverPolicyService(_eventBus, _carSim, _trackQuery, _loopService, _profileRegistry, versionProfile);
             // Scenario uses fixed lap-start spawn (longest-straight midpoint).
             _policyService.Spawn = SpawnStrategy.LongestStraightMidpoint;

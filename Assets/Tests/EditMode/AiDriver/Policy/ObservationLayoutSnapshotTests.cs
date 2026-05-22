@@ -120,59 +120,27 @@ namespace UnityPpoRacingTrainer.Core.Tests.AiDriver.Policy
         }
 
         /// <summary>
-        /// Golden hash of (FloatsPerFrame, every block size, every wall-ray
-        /// angle, every lookahead second). Locks the *structure* of the
-        /// observation — distinct from the runtime float values, which depend
-        /// on car state. If you change the layout deliberately, regenerate by
-        /// uncommenting the Debug.Log line below, running this test once,
-        /// pasting the new hash, and snapshotting the old Latest first.
+        /// Stable hash of (FloatsPerFrame, every block size, every wall-ray
+        /// angle, every lookahead second). Phase 5: moved from
+        /// <c>string.GetHashCode</c> (non-stable across .NET versions) to
+        /// FNV-1a 64-bit hex via <see cref="RacingObservationLayout.ComputeLayoutHash"/>.
+        /// The same value is baked into every manifest's
+        /// <c>observation.layoutHash</c> field; the
+        /// <c>ManifestParityTests.Latest_LayoutHash_Matches_RacingV1</c> test
+        /// pairs the two so drift on either side fails CI.
+        ///
+        /// Determinism check: the hash for the same input must round-trip
+        /// identically across runs.
         /// </summary>
         [Test]
-        public void LayoutHash_MatchesGolden()
+        public void LayoutHash_Is_Stable_Across_Calls()
         {
-            var sb = new StringBuilder();
-            sb.Append("v=").Append(RacingObservationLayout.FloatsPerFrame).Append(';');
-            sb.Append("base=").Append(RacingObservationLayout.BaseObservationFloats).Append(';');
-            sb.Append("race=").Append(RacingObservationLayout.RaceContextFloats).Append(';');
-            sb.Append("cone=").Append(RacingObservationLayout.FrontConeFloats).Append(';');
-            sb.Append("anchors=").Append(RacingObservationLayout.LookaheadAnchors).Append(';');
-            sb.Append("walls=").Append(RacingObservationLayout.WallRayCount).Append(';');
-            sb.Append("opp=").Append(RacingObservationLayout.OpponentRayCount).Append(';');
-            foreach (var w in RacingObservationLayout.WallRayAnglesRad)
-                sb.Append(w.ToString("R")).Append(',');
-            sb.Append('|');
-            foreach (var l in RacingObservationLayout.LookaheadSeconds)
-                sb.Append(l.ToString("R")).Append(',');
-
-            int hash = sb.ToString().GetHashCode();
-            // Debug.Log($"[ObsLayoutSnapshot] hash={hash} src=\"{sb}\""); // <- regenerate
-
-            // Recorded once the layout stabilised at FloatsPerFrame=60.
-            // A mismatch means the layout drifted; regenerate after you've
-            // versioned the previous canonical under Versions/V<N>/.
-            const int GoldenLayoutHash = unchecked((int)0); // SENTINEL: see below
-
-            // GoldenLayoutHash == 0 means "no golden recorded yet". The first
-            // CI run logs the live hash; the maintainer pastes it back, replaces
-            // the sentinel, and the test starts enforcing. Until then this test
-            // just records a determinism check: the hash for the *same source*
-            // must round-trip identically across runs (it always will — this is
-            // a smoke for the test infrastructure itself).
-            if (GoldenLayoutHash == 0)
-            {
-                Debug.Log($"[ObsLayoutSnapshot] no golden yet; current hash={hash}. " +
-                          "Paste this value into GoldenLayoutHash to lock it.");
-                int again = sb.ToString().GetHashCode();
-                Assert.That(again, Is.EqualTo(hash),
-                    "GetHashCode should be stable for identical input within one run.");
-            }
-            else
-            {
-                Assert.That(hash, Is.EqualTo(GoldenLayoutHash),
-                    "Observation layout drifted from the golden snapshot. If the " +
-                    "change is intentional, freeze Latest under Versions/V<N>/, " +
-                    "then paste the new hash here.");
-            }
+            string a = RacingObservationLayout.ComputeLayoutHash();
+            string b = RacingObservationLayout.ComputeLayoutHash();
+            Assert.That(b, Is.EqualTo(a), "ComputeLayoutHash must be deterministic.");
+            Debug.Log($"[ObsLayoutSnapshot] live ComputeLayoutHash() = {a}. " +
+                      "If the layout drifted, paste this into the manifest's observation.layoutHash field " +
+                      "(after snapshotting the previous canonical to a new <id>.json).");
         }
     }
 }

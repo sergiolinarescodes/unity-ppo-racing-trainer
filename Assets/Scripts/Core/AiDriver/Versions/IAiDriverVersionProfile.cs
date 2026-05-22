@@ -60,11 +60,9 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
 
         /// <summary>Slipstream / drafting constants — wake distance, lateral
         /// tolerance, drag cut, catch-up accel boost, activation thresholds,
-        /// and attack/release smoothing taus. <see cref="DraftService"/>
-        /// consumes this in its ctor instead of baking the constants. Phase 2+
-        /// reads from the manifest; <see cref="LatestVersionProfile"/> /
-        /// <see cref="V1.V1VersionProfile"/> return canonical defaults that
-        /// match the historical baked values.</summary>
+        /// and attack/release smoothing taus. The <c>DraftService</c> consumes
+        /// this in its ctor instead of baking the constants; the values come
+        /// from the active version's manifest <c>drafting</c> section.</summary>
         DraftingSettings Drafting { get; }
 
         /// <summary>Reward shaper to plug into the policy service. Snapshots

@@ -110,6 +110,46 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy
             for (int i = 0; i < FloatsPerFrame; i++) sensor.AddObservation(0f);
         }
 
+        /// <summary>
+        /// Stable FNV-1a 64-bit hex hash of the observation layout structure.
+        /// Same input ⇒ same hex output across .NET runtimes (unlike
+        /// <c>string.GetHashCode</c>). The manifests'
+        /// <c>observation.layoutHash</c> field stores this value at snapshot
+        /// time; the parity / snapshot tests assert equality so drift here
+        /// fails CI before it ships an ONNX/observation mismatch to disk.
+        /// </summary>
+        public static string ComputeLayoutHash()
+        {
+            // Canonical serialization: include every layout-shaping constant.
+            // R format preserves full float roundtrip so the source string is
+            // bit-stable for the same inputs.
+            var sb = new System.Text.StringBuilder();
+            sb.Append("v=").Append(FloatsPerFrame).Append(';');
+            sb.Append("base=").Append(BaseObservationFloats).Append(';');
+            sb.Append("race=").Append(RaceContextFloats).Append(';');
+            sb.Append("cone=").Append(FrontConeFloats).Append(';');
+            sb.Append("anchors=").Append(LookaheadAnchors).Append(';');
+            sb.Append("walls=").Append(WallRayCount).Append(';');
+            sb.Append("opp=").Append(OpponentRayCount).Append(';');
+            foreach (var w in WallRayAnglesRad)
+                sb.Append(w.ToString("R", System.Globalization.CultureInfo.InvariantCulture)).Append(',');
+            sb.Append('|');
+            foreach (var l in LookaheadSeconds)
+                sb.Append(l.ToString("R", System.Globalization.CultureInfo.InvariantCulture)).Append(',');
+
+            // FNV-1a 64-bit.
+            const ulong fnvOffset = 14695981039346656037UL;
+            const ulong fnvPrime = 1099511628211UL;
+            ulong hash = fnvOffset;
+            string src = sb.ToString();
+            for (int i = 0; i < src.Length; i++)
+            {
+                hash ^= src[i];
+                hash *= fnvPrime;
+            }
+            return hash.ToString("x16", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
         /// <summary>Body-relative angle of opponent-ray <paramref name="i"/>.</summary>
         public static float OpponentRayAngleRad(int i)
         {
