@@ -1,0 +1,97 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-smoke:
+    name: Python smoke (tools/)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: tools/requirements.txt
+
+      - name: Install requirements (CPU torch)
+        run: |
+          python -m pip install --upgrade pip wheel
+          python -m pip install torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r tools/requirements.txt --no-deps
+          python -m pip install -r tools/requirements.txt
+
+      - name: Import sanity
+        run: |
+          python -c "import torch, numpy, mlagents, psutil; print('torch', torch.__version__, 'numpy', numpy.__version__)"
+
+      - name: mlagents-learn --help (verifies entry point)
+        run: python -m mlagents.trainers.learn --help
+
+      - name: Lint Python (ruff)
+        run: |
+          python -m pip install ruff==0.5.7
+          ruff check tools --select E,F,W,I --line-length 120 --exclude tools/python
+
+      - name: Settings.json parses as JSON
+        run: python -c "import json; json.load(open('settings.json'))"
+
+      - name: Dashboard imports
+        run: python -c "import importlib.util, pathlib; spec=importlib.util.spec_from_file_location('srv', 'tools/dashboard/server.py'); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)"
+        continue-on-error: true
+
+  unity-tests:
+    name: Unity edit-mode tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Requires repository secrets UNITY_EMAIL / UNITY_PASSWORD / UNITY_SERIAL (or UNITY_LICENSE).
+    # Job is auto-skipped when secrets are absent so forks can still open PRs.
+    if: ${{ vars.UNITY_TESTS_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+
+      - name: Cache Library/
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-${{ runner.os }}-${{ hashFiles('Packages/manifest.json', 'ProjectSettings/ProjectVersion.txt') }}
+          restore-keys: |
+            Library-${{ runner.os }}-
+
+      - name: Run edit-mode tests
+        uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        with:
+          unityVersion: 6000.4.0f1
+          testMode: editmode
+          checkName: edit-mode tests
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          # Limit CI to unit-style tests. Scenario tests boot live Unity scenes
+          # and need Track Editor / ONNX fixtures not present in CI; they run locally.
+          customParameters: -testFilter "Unidad\.Core\.Tests\.Tests\.(DOTS|Conventions|Patterns)\..*"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-test-results
+          path: artifacts

@@ -1,0 +1,5 @@
+torch==2.2.2
+mlagents==1.1.0
+psutil>=5.9
+numpy<2.0
+protobuf==3.20.3

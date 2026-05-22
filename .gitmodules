@@ -1,0 +1,3 @@
+[submodule "Packages/com.unidad.core"]
+	path = Packages/com.unidad.core
+	url = https://github.com/sergiolinarescodes/unidad.git

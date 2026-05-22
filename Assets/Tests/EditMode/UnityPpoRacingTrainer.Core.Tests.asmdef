@@ -1,0 +1,28 @@
+{
+    "name": "UnityPpoRacingTrainer.Core.Tests",
+    "rootNamespace": "UnityPpoRacingTrainer.Core.Tests",
+    "references": [
+        "UnityPpoRacingTrainer.Core",
+        "Unidad.Core.Runtime",
+        "Unity.ML-Agents",
+        "Unity.InferenceEngine",
+        "Unity.Burst",
+        "Unity.Collections",
+        "Unity.Mathematics"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

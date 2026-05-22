@@ -1,0 +1,52 @@
+# Unity
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Mm]emoryCaptures/
+[Uu]serSettings/
+*.csproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.unityproj
+*.tmp
+*.pidb
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# IDE
+.vs/
+.idea/
+.vscode/
+.claude/
+
+# Build artifacts
+Build/AiDriverTrainer/
+
+# Training output
+results/
+*.log
+TestResults*.xml
+
+# Trained policies — copied here by the supervisor on each run.
+# Add specific .onnx files with `git add -f` if you want to ship one.
+Assets/Resources/AiDriver/Policies/*.onnx
+Assets/Resources/AiDriver/Policies/*.onnx.meta
+
+# Python
+tools/python/.venv/
+__pycache__/
+*.pyc
+
+# Settings backup (rolling)
+settings.json.bak
+
+# OS
+.DS_Store
+Thumbs.db
