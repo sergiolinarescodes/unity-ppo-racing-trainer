@@ -11,10 +11,10 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
     /// constants, drafting, tire wear, reward weights, curriculum stages,
     /// observation layout selection, prefab / ONNX paths.
     ///
-    /// Adding a new version is two steps: add an
-    /// <see cref="AiDriverVersion"/> enum value + a row in
-    /// <c>AiDriverVersionsSystemInstaller.VersionEnumMap</c>, then drop
-    /// <c>&lt;id&gt;.json</c> next to <c>latest.json</c>. The dashboard at
+    /// Adding a new version is one step: drop a new <c>&lt;id&gt;.json</c>
+    /// next to <c>latest.json</c>. The trainer auto-registers every
+    /// manifest file under <c>Configs/Versions/</c>; switch the active id
+    /// via <c>TrainerBootstrap.activeVersionId</c>. The dashboard at
     /// <c>http://localhost:8765/settings?version=&lt;id&gt;</c> edits the
     /// non-frozen sections of this file in place; snapshots (anything except
     /// <c>"latest"</c>) reject writes by default to keep them paired with
@@ -43,6 +43,17 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
         public IReadOnlyList<StageManifestEntry> Stages { get; init; } = Array.Empty<StageManifestEntry>();
 
         public CodeModulesSection CodeModules { get; init; } = new();
+
+        /// <summary>
+        /// Optional list of extra reward channels (in addition to the
+        /// monolithic <c>RewardShaper</c>). Each entry's <c>Id</c> must resolve
+        /// in <c>IRewardChannelRegistry</c>; <c>ActiveInStages</c> gates
+        /// which curriculum stages tick the channel (empty list = always
+        /// active). This is the extension point for "add a new reward signal
+        /// to a future version without touching prior frozen snapshots":
+        /// snapshots that don't list the channel id stay bit-identical.
+        /// </summary>
+        public IReadOnlyList<RewardChannelManifestEntry> RewardChannels { get; init; } = Array.Empty<RewardChannelManifestEntry>();
     }
 
     public sealed record MlAgentsSection
@@ -109,5 +120,17 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
         public string PhysicsModel { get; init; } = "Default";
         public string ObservationWriter { get; init; } = "RacingV1";
         public string RewardShaper { get; init; } = "Composite";
+    }
+
+    /// <summary>
+    /// One row in <see cref="VersionManifest.RewardChannels"/>. The
+    /// <c>Id</c> selects a registered <c>IRewardChannel</c>;
+    /// <c>ActiveInStages</c> gates which curriculum stages tick the channel
+    /// (empty = always active).
+    /// </summary>
+    public sealed record RewardChannelManifestEntry
+    {
+        public string Id { get; init; } = "";
+        public IReadOnlyList<int> ActiveInStages { get; init; } = Array.Empty<int>();
     }
 }

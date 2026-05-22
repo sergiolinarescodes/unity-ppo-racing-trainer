@@ -54,8 +54,8 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
         [SerializeField] private int terrainWidth = 30;
         [Tooltip("Depth of the flat training terrain in cells.")]
         [SerializeField] private int terrainDepth = 30;
-        [Tooltip("Which AI driver model version this trainer scene runs. Latest = canonical 60-float schema with tires/fuel/draft/collision/race-state wired. Prefab, ONNX, yaml, and physics defaults all resolve from the matching IAiDriverVersionProfile via DI. Frozen snapshots get added here when new versions are taken.")]
-        [SerializeField] private AiDriverVersion activeVersion = AiDriverVersion.Latest;
+        [Tooltip("Which AI driver model version this trainer scene runs. String id matching a <id>.json under Assets/_Bootstrap/Configs/Versions/ (\"latest\" = canonical, \"v1\" = first snapshot, etc.). Prefab, ONNX, yaml, and physics defaults all resolve from the matching IAiDriverVersionProfile via DI. New snapshots = drop a new <id>.json; no enum bump required.")]
+        [SerializeField] private string activeVersionId = "latest";
         [Tooltip("How many agents to spawn on the same loop. Cars ghost through each other; experience aggregates under the shared BehaviorName for ~Nx faster PPO. Hard-capped at 200 at runtime. The env var RACING_AGENT_COUNT overrides this serialized value at startup (used by the supervisor to switch counts per curriculum stage).")]
         [Range(1, 200)]
         [SerializeField] private int agentCount = 24;
@@ -101,15 +101,18 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
             installers.Add(new RealisticTrackGenerationSystemInstaller());
             installers.Add(new AiDriverLoopSystemInstaller());
             installers.Add(new AiDriverPhysicsSystemInstaller());
-            // Manifest scaffolding (Phase 1, dormant). Loads
-            // Assets/_Bootstrap/Configs/Versions/*.json into a dict and
-            // exposes empty strategy registries. Nothing consumes these yet —
-            // AiDriverVersionsSystemInstaller below still binds the active
-            // IAiDriverVersionProfile from the hardcoded C# profiles.
+            // Manifest infra: loads Assets/_Bootstrap/Configs/Versions/*.json
+            // into a dict, seeds the strategy registries (RewardChannel,
+            // ObservationWriter, PhysicsModel), and binds the canonical
+            // RacingV1 observation writer. AiDriverVersionsSystemInstaller
+            // below registers one ManifestBackedVersionProfile per manifest
+            // file and resolves the active IAiDriverVersionProfile by the
+            // activeVersionId string. Adding a new version = drop a new
+            // <id>.json — no enum bump, no new C# class.
             installers.Add(new UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest.VersionManifestSystemInstaller());
             // Versions infra goes BEFORE AiDriverPolicySystemInstaller so
             // the policy service can resolve IAiDriverVersionProfile in ctor.
-            installers.Add(new AiDriverVersionsSystemInstaller(activeVersion));
+            installers.Add(new AiDriverVersionsSystemInstaller(activeVersionId));
             // Latest requires the full tire/fuel/draft/collision/race-state
             // stack. Profile carries this via RequiresSideSystems but the
             // installer list is built before any container exists, so we read
@@ -299,7 +302,7 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
                     loop, director, firstAgent);
 
                 var modelHud = gameObject.AddComponent<LoadedModelHud>();
-                modelHud.Bind(versionProfile, activeVersion);
+                modelHud.Bind(versionProfile, activeVersionId);
 
                 // Only attach the visual debug renderer in editor — headless
                 // build lacks the Sprites/Default + URP shaders so material
@@ -418,7 +421,7 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
             var prefab = Resources.Load<GameObject>(profile.PrefabResourcePath);
             if (prefab == null)
             {
-                Debug.LogError($"[TrainerBootstrap] AiDriverAgent prefab missing at Resources/{profile.PrefabResourcePath}.prefab (version={profile.Version}).");
+                Debug.LogError($"[TrainerBootstrap] AiDriverAgent prefab missing at Resources/{profile.PrefabResourcePath}.prefab (version={profile.VersionId}).");
                 return null;
             }
 
@@ -768,15 +771,15 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
     internal sealed class LoadedModelHud : MonoBehaviour
     {
         private IAiDriverVersionProfile _profile;
-        private AiDriverVersion _activeVersion;
+        private string _activeVersionId = "";
         private string _modelFileLabel = "(unresolved)";
         private string _modelMtimeLabel = "";
         private GUIStyle _style;
 
-        public void Bind(IAiDriverVersionProfile profile, AiDriverVersion activeVersion)
+        public void Bind(IAiDriverVersionProfile profile, string activeVersionId)
         {
             _profile = profile;
-            _activeVersion = activeVersion;
+            _activeVersionId = activeVersionId ?? "";
             RefreshLabels();
         }
 
@@ -821,7 +824,7 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
                 _style.normal.textColor = Color.white;
             }
             string text =
-                $"<b>AI Driver — {_activeVersion}</b>\n" +
+                $"<b>AI Driver — {_activeVersionId}</b>\n" +
                 $"behavior: {_profile.BehaviorName}\n" +
                 $"obs/frame: {_profile.FloatsPerFrame}\n" +
                 $"model: {_modelFileLabel}";

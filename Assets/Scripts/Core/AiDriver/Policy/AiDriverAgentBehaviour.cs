@@ -20,7 +20,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy
     /// which reward shaper) is resolved by <c>AiDriverPolicyService</c> via
     /// <c>IAiDriverVersionProfile</c> — this Behaviour does NOT mutate flags
     /// on the policy service. To bring up a different version, change the
-    /// bootstrap's <c>activeVersion</c> field.
+    /// bootstrap's <c>activeVersionId</c> field.
     ///
     /// Stays MonoBehaviour because the ML-Agents SDK requires it; all logic
     /// delegates to <see cref="IAiDriverPolicyService"/>.

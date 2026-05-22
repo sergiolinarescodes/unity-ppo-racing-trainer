@@ -14,43 +14,31 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
     /// <c>AiDriverPolicySystemInstaller</c> so the policy service can consume
     /// the bound profile in its ctor.
     ///
-    /// Every version is manifest-driven (Phase 4+): each
-    /// <see cref="AiDriverVersion"/> entry maps to a JSON file under
-    /// <c>Assets/_Bootstrap/Configs/Versions/</c>, loaded by
-    /// <see cref="VersionManifestLoader"/>. Adding a new snapshot is two steps:
-    /// add an entry to <see cref="VersionEnumMap"/> below and drop a new
-    /// <c>&lt;id&gt;.json</c> alongside <c>latest.json</c>. No new code-side
-    /// profile class needed — <see cref="ManifestBackedVersionProfile"/>
-    /// adapts any well-formed manifest to <see cref="IAiDriverVersionProfile"/>.
+    /// Every version is manifest-driven (Phase 4+) and string-id keyed
+    /// (Phase 6). Every <c>&lt;id&gt;.json</c> under
+    /// <c>Assets/_Bootstrap/Configs/Versions/</c> is auto-registered as one
+    /// <see cref="ManifestBackedVersionProfile"/>; the picker is the
+    /// <c>activeVersionId</c> string passed in from <c>TrainerBootstrap</c>.
+    /// Adding a new version is one step: drop a new <c>&lt;id&gt;.json</c>.
     /// </summary>
     public sealed class AiDriverVersionsSystemInstaller : ISystemInstaller
     {
-        // Picker between Unity-serialized AiDriverVersion enum and the manifest
-        // file's version_id string. Add a new (enum, id) pair when freezing a
-        // new snapshot; the corresponding <id>.json manifest is the rest of
-        // the work.
-        private static readonly (AiDriverVersion Enum, string Id)[] VersionEnumMap =
-        {
-            (AiDriverVersion.Latest, "latest"),
-            (AiDriverVersion.V1, "v1"),
-        };
+        private readonly string _activeVersionId;
 
-        private readonly AiDriverVersion _activeVersion;
-
-        public AiDriverVersionsSystemInstaller(AiDriverVersion activeVersion)
+        public AiDriverVersionsSystemInstaller(string activeVersionId)
         {
-            _activeVersion = activeVersion;
+            _activeVersionId = string.IsNullOrEmpty(activeVersionId) ? "latest" : activeVersionId;
         }
 
         public void Install(ContainerBuilder builder)
         {
-            // Registry holds one ManifestBackedVersionProfile per known
-            // version_id, keyed by the legacy AiDriverVersion enum. Each
-            // profile captures a Func<IRewardShaper> instead of resolving
-            // up-front to dodge the DI cycle (profile → shaper →
-            // IActiveStageProfile → profile). NullRewardShaper.Instance is
-            // the fallback when no real shaper is registered (player /
-            // inference builds with AIDRIVER_TRAINING off).
+            // Registry holds one ManifestBackedVersionProfile per manifest in
+            // the loaded dictionary, keyed by versionId string. Each profile
+            // captures a Func<IRewardShaper> instead of resolving up-front to
+            // dodge the DI cycle (profile → shaper → IActiveStageProfile →
+            // profile). NullRewardShaper.Instance is the fallback when no
+            // real shaper is registered (player / inference builds with
+            // AIDRIVER_TRAINING off).
             builder.AddSingleton(c =>
             {
                 var registry = new AiDriverVersionRegistry();
@@ -60,18 +48,12 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
                     Debug.LogError("[AiDriverVersionsSystemInstaller] manifest dictionary missing — VersionManifestSystemInstaller must precede this installer.");
                     return registry;
                 }
-                foreach (var (versionEnum, versionId) in VersionEnumMap)
+                foreach (var kv in manifests)
                 {
-                    if (!manifests.TryGetValue(versionId, out var manifest))
-                    {
-                        Debug.LogError($"[AiDriverVersionsSystemInstaller] manifest '{versionId}.json' missing — {versionEnum} will not resolve.");
-                        continue;
-                    }
                     var profile = new ManifestBackedVersionProfile(
-                        manifest,
-                        () => c.TryResolveOptional<IRewardShaper>() ?? NullRewardShaper.Instance,
-                        versionEnum);
-                    registry.Register(versionEnum, profile);
+                        kv.Value,
+                        () => c.TryResolveOptional<IRewardShaper>() ?? NullRewardShaper.Instance);
+                    registry.Register(kv.Key, profile);
                 }
                 return registry;
             }, typeof(AiDriverVersionRegistry));
@@ -79,12 +61,37 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
             // The active profile — directly injectable into policy + bootstrap.
             // Lookup goes through the registry so the picker logic stays in
             // one place.
-            var captured = _activeVersion;
+            var captured = _activeVersionId;
             builder.AddSingleton(c =>
             {
                 var registry = c.Resolve<AiDriverVersionRegistry>();
-                return registry.Get(captured);
+                if (registry.TryGet(captured, out var profile)) return profile;
+                Debug.LogError(
+                    $"[AiDriverVersionsSystemInstaller] active version id '{captured}' not found in manifest dictionary. " +
+                    "Falling back to 'latest'. Check TrainerBootstrap.activeVersionId or drop a matching <id>.json.");
+                if (registry.TryGet("latest", out var fallback)) return fallback;
+                throw new System.InvalidOperationException(
+                    "AiDriverVersionRegistry is empty — manifests must exist under Assets/_Bootstrap/Configs/Versions/.");
             }, typeof(IAiDriverVersionProfile));
+
+            // Active IObservationWriter: looked up by id from the active
+            // version's manifest.codeModules.observationWriter. Any registered
+            // writer can be selected — this is the dispatch point that lets a
+            // future version pick a different observation layout without
+            // touching the policy service.
+            builder.AddSingleton(c =>
+            {
+                var profile = c.Resolve<IAiDriverVersionProfile>();
+                var registry = c.Resolve<IObservationWriterRegistry>();
+                string id = profile.Manifest?.CodeModules?.ObservationWriter ?? "RacingV1";
+                if (registry.TryGet(id, out var writer)) return writer;
+                Debug.LogError(
+                    $"[AiDriverVersionsSystemInstaller] manifest references observation writer id '{id}' " +
+                    "but no IObservationWriter with that id is registered. Falling back to RacingV1.");
+                if (registry.TryGet("RacingV1", out var fallback)) return fallback;
+                throw new System.InvalidOperationException(
+                    "IObservationWriterRegistry is empty — VersionManifestSystemInstaller must precede AiDriverVersionsSystemInstaller.");
+            }, typeof(IObservationWriter));
         }
 
         public ISystemTestFactory CreateTestFactory() => new AiDriverVersionsTestFactory();

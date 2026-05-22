@@ -8,7 +8,10 @@ using UnityPpoRacingTrainer.Core.AiDriver.Policy;
 using UnityPpoRacingTrainer.Core.AiDriver.Race;
 using UnityPpoRacingTrainer.Core.AiDriver.Training;
 using UnityPpoRacingTrainer.Core.AiDriver.Training.Generation;
+using UnityPpoRacingTrainer.Core.AiDriver.Training.Rewards;
 using UnityPpoRacingTrainer.Core.AiDriver.Training.Stages;
+using UnityPpoRacingTrainer.Core.AiDriver.Versions;
+using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 using UnityPpoRacingTrainer.Core.Track;
 using UnityPpoRacingTrainer.Core.Track.Loop;
 using Reflex.Core;
@@ -59,12 +62,47 @@ namespace UnityPpoRacingTrainer.Core.AiDriver
                     c.Resolve<ICarSimulationService>()),
                 typeof(IRewardShaper));
 
-            // Composite reward source: EpisodeRunner (base) plus the
-            // optional personality-aware reward shaper.
+            // Resolved extra reward channels (plug-in surface). The active
+            // version manifest lists channel ids + their stage gates; this
+            // binding turns those into IRewardChannel instances by looking
+            // each id up in IRewardChannelRegistry. Manifests with no entries
+            // resolve to an empty list and the composite source falls through
+            // to the base + shaper path unchanged.
+            builder.AddSingleton(c =>
+            {
+                var profile = c.Resolve<IAiDriverVersionProfile>();
+                var registry = c.TryResolveOptional<IRewardChannelRegistry>();
+                var entries = profile.Manifest?.RewardChannels;
+                if (registry == null || entries == null || entries.Count == 0)
+                    return ActiveRewardChannels.Empty;
+                var list = new System.Collections.Generic.List<ActiveRewardChannel>(entries.Count);
+                foreach (var e in entries)
+                {
+                    if (registry.TryGet(e.Id, out var channel))
+                    {
+                        list.Add(new ActiveRewardChannel(channel, e.ActiveInStages));
+                    }
+                    else
+                    {
+                        UnityEngine.Debug.LogError(
+                            $"[AiDriverTrainingSystemInstaller] manifest references reward channel id '{e.Id}' " +
+                            "but no IRewardChannel with that id is registered. " +
+                            "Register one in an ISystemInstaller before AiDriverTrainingSystemInstaller, " +
+                            "or remove the entry from the manifest.");
+                    }
+                }
+                return new ActiveRewardChannels(list);
+            }, typeof(ActiveRewardChannels));
+
+            // Composite reward source: EpisodeRunner (base) plus the optional
+            // personality-aware reward shaper plus any manifest-driven extra
+            // reward channels.
             builder.AddSingleton(c => new CompositeEpisodeRewardSource(
                     c.Resolve<EpisodeRunner>(),
                     c.TryResolveOptional<IRewardShaper>(),
-                    c.Resolve<ITimeProvider>()),
+                    c.Resolve<ITimeProvider>(),
+                    c.TryResolveOptional<ActiveRewardChannels>(),
+                    c.TryResolveOptional<IActiveStageProfile>()),
                 typeof(IEpisodeRewardSource));
 
             builder.AddSingleton(c => new ShapeBasedLoopGenerator(

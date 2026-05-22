@@ -5,6 +5,7 @@ using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 
 namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
 {
+
     /// <summary>
     /// Immutable bundle that captures everything a "premium AI driver model
     /// version" depends on: the BehaviorName ML-Agents Python trainer key,
@@ -19,7 +20,10 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
     /// </summary>
     public interface IAiDriverVersionProfile
     {
-        AiDriverVersion Version { get; }
+        /// <summary>Stable id of the version — matches the manifest's
+        /// <c>versionId</c> field and the manifest filename
+        /// (<c>"latest"</c>, <c>"v1"</c>, …).</summary>
+        string VersionId { get; }
 
         /// <summary>ML-Agents Python trainer key. Must match the yaml's
         /// <c>behaviors:</c> top-level entry and the prefab's
@@ -85,5 +89,14 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
         /// current <c>stage_id</c>" — there is no global stage registry.
         /// </summary>
         IStageProfileRegistry StageProfiles { get; }
+
+        /// <summary>
+        /// Raw manifest backing this profile. Exposed so extension installers
+        /// (reward channels, observation writer, physics model) can read the
+        /// version's <c>CodeModules</c> and <c>RewardChannels</c> entries
+        /// without re-loading the JSON. Every profile is manifest-backed since
+        /// Phase 4.
+        /// </summary>
+        VersionManifest Manifest { get; }
     }
 }

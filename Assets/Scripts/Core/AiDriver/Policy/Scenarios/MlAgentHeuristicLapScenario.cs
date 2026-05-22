@@ -178,8 +178,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy.Scenarios
             var manifests = Versions.Manifest.VersionManifestLoader.LoadAll();
             var versionProfile = new Versions.Manifest.ManifestBackedVersionProfile(
                 manifests["latest"],
-                () => NullRewardShaper.Instance,
-                Versions.AiDriverVersion.Latest);
+                () => NullRewardShaper.Instance);
             _policyService = new AiDriverPolicyService(_eventBus, _carSim, _trackQuery, _loopService, _profileRegistry, versionProfile);
             // Scenario uses fixed lap-start spawn (longest-straight midpoint).
             _policyService.Spawn = SpawnStrategy.LongestStraightMidpoint;

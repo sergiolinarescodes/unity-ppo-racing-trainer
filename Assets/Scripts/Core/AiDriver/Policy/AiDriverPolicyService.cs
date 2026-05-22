@@ -9,6 +9,7 @@ using UnityPpoRacingTrainer.Core.AiDriver.Race;
 using UnityPpoRacingTrainer.Core.AiDriver.Training;
 using UnityPpoRacingTrainer.Core.AiDriver.Training.Stages;
 using UnityPpoRacingTrainer.Core.AiDriver.Versions;
+using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 using UnityPpoRacingTrainer.Core.Track.Loop;
 using Unidad.Core.EventBus;
 using Unidad.Core.Systems;
@@ -51,6 +52,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy
         private readonly IFuelService _fuel;
         private readonly IDraftService _draft;
         private readonly IAiDriverVersionProfile _versionProfile;
+        private readonly IObservationWriter _writer;
         private readonly Training.IStageIdProvider _stage;
         private readonly IActiveStageProfile _active;
         // Optional. When non-null + IsRaceScoped, ApplyActions overrides the
@@ -77,13 +79,15 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy
             IDraftService draft = null,
             Training.IStageIdProvider stage = null,
             IActiveStageProfile active = null,
-            IRaceCoordinator coord = null) : base(eventBus)
+            IRaceCoordinator coord = null,
+            IObservationWriter writer = null) : base(eventBus)
         {
             _carSim = carSim;
             _trackQuery = trackQuery;
             _loop = loop;
             _profiles = profiles;
             _versionProfile = versionProfile ?? throw new ArgumentNullException(nameof(versionProfile));
+            _writer = writer ?? Observation.RacingV1ObservationWriter.Instance;
             _collision = collision;
             _tires = tires;
             _fuel = fuel;
@@ -294,7 +298,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy
             if (!_agents.TryGetValue(carId, out var rec)
                 || !_carSim.TryGetState(carId, out var state))
             {
-                RacingObservationLayout.WriteZeros(sensor);
+                _writer.WriteZeros(sensor);
                 return;
             }
 
@@ -302,14 +306,14 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy
                 ? _trackQuery.Project(state.Position, state.LastAnchorIndex)
                 : default;
 
-            int lookaheadCount = RacingObservationLayout.LookaheadAnchors;
-            float[] lookaheadSecs = RacingObservationLayout.LookaheadSeconds;
+            int lookaheadCount = _writer.LookaheadAnchors;
+            ReadOnlySpan<float> lookaheadSecs = _writer.LookaheadSeconds;
             Span<CenterlineSample> samples = stackalloc CenterlineSample[lookaheadCount];
             if (_trackQuery.HasPath)
             {
                 // Lookahead distance uses LookaheadReferenceSpeed so the agent's
                 // visible horizon is invariant to physics MaxSpeed tuning.
-                float lookaheadRefSpeed = RacingObservationLayout.LookaheadReferenceSpeed;
+                float lookaheadRefSpeed = _writer.LookaheadReferenceSpeed;
                 Span<float> offsets = stackalloc float[lookaheadCount];
                 float pathLen = _trackQuery.TotalPathLength;
                 // Closed loop: half-total caps wrap-around overlap (longest
@@ -339,9 +343,9 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy
                 yawRate = dHead / DecisionDtSeconds;
             }
 
-            int rayCount = RacingObservationLayout.WallRayCount;
-            float rayMax = RacingObservationLayout.WallRayMaxMeters;
-            float[] rayAngles = RacingObservationLayout.WallRayAnglesRad;
+            int rayCount = _writer.WallRayCount;
+            float rayMax = _writer.WallRayMaxMeters;
+            ReadOnlySpan<float> rayAngles = _writer.WallRayAnglesRad;
             Span<float> rayOccupancy = stackalloc float[rayCount];
             if (_collision != null)
             {
@@ -371,7 +375,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy
                 _lastObservations[carId] = obsBuf;
             }
 
-            int written = RacingObservationLayout.WriteBase(
+            int written = _writer.WriteBase(
                 obsBuf, state, rec.Profile.Car, proj, samples,
                 yawRate, rec.Smoother.Steer, rec.Smoother.Throttle,
                 rayOccupancy, surfaceCode);
@@ -439,7 +443,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy
             var draft = (showDraft && _draft != null) ? _draft.Get(carId) : new DraftState(0f, null);
             var personality = showPersonality ? rec.Profile.Personality : DriverPersonality.Default;
 
-            offset = RacingObservationLayout.WriteRaceContext(
+            offset = _writer.WriteRaceContext(
                 obsBuf, offset,
                 selfId: carId,
                 selfPos: state.Position,
@@ -452,7 +456,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy
                 draft: draft,
                 personality: personality);
 
-            offset = RacingObservationLayout.WriteFrontCone(
+            offset = _writer.WriteFrontCone(
                 obsBuf, offset,
                 selfPos: state.Position,
                 selfHeading: state.Heading,

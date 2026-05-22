@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using UnityPpoRacingTrainer.Core.AiDriver.Policy.Observation;
 using Reflex.Core;
 using Unidad.Core.Bootstrap;
 using Unidad.Core.Testing;
@@ -7,15 +8,14 @@ using Unidad.Core.Testing;
 namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
 {
     /// <summary>
-    /// Phase 1 (dormant): registers the manifest loader output + empty
-    /// strategy registries. Does NOT bind <see cref="IAiDriverVersionProfile"/>
-    /// — the existing <c>AiDriverVersionsSystemInstaller</c> still wins.
-    /// Future phases populate the registries and switch the active-profile
-    /// binding here once parity tests pass.
+    /// Registers the manifest loader output, the strategy registries, and the
+    /// built-in strategy implementations (canonical observation writer, etc).
+    /// External code adds new strategies by registering more entries in these
+    /// registries from its own ISystemInstaller.
     ///
-    /// Install order: BEFORE <c>AiDriverVersionsSystemInstaller</c> so a
-    /// later phase's binding override resolves cleanly. Today the install
-    /// order is irrelevant because nothing consumes the registries.
+    /// Install order: BEFORE <c>AiDriverVersionsSystemInstaller</c> so the
+    /// active version profile (which is resolved later) can look up its
+    /// strategy ids in the registries seeded here.
     /// </summary>
     public sealed class VersionManifestSystemInstaller : ISystemInstaller
     {
@@ -25,12 +25,24 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
             builder.AddSingleton(_ => VersionManifestLoader.LoadAll(),
                 typeof(IReadOnlyDictionary<string, VersionManifest>));
 
+            // Reward channel registry — empty by default. New IRewardChannel
+            // implementations register themselves from their own ISystemInstaller
+            // (called after this one).
             builder.AddSingleton(_ => new RewardChannelRegistry(),
                 typeof(RewardChannelRegistry), typeof(IRewardChannelRegistry));
+
             builder.AddSingleton(_ => new PhysicsModelRegistry(),
                 typeof(PhysicsModelRegistry), typeof(IPhysicsModelRegistry));
-            builder.AddSingleton(_ => new ObservationWriterRegistry(),
-                typeof(ObservationWriterRegistry), typeof(IObservationWriterRegistry));
+
+            // Observation writer registry — seeded with the canonical RacingV1
+            // writer. Adding a new layout = implement IObservationWriter,
+            // register it here from another installer under a new id.
+            builder.AddSingleton(_ =>
+            {
+                var reg = new ObservationWriterRegistry();
+                reg.Register(RacingV1ObservationWriter.Instance.Id, RacingV1ObservationWriter.Instance);
+                return reg;
+            }, typeof(ObservationWriterRegistry), typeof(IObservationWriterRegistry));
         }
 
         public ISystemTestFactory CreateTestFactory() => new VersionManifestTestFactory();

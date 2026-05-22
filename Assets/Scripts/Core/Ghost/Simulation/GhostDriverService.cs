@@ -105,7 +105,7 @@ namespace UnityPpoRacingTrainer.Core.Ghost.Simulation
             var prefab = Resources.Load<GameObject>(_profile.PrefabResourcePath);
             if (prefab == null)
             {
-                Debug.LogError($"[GhostDriver] AiDriverAgent prefab missing at Resources/{_profile.PrefabResourcePath}.prefab (version={_profile.Version}).");
+                Debug.LogError($"[GhostDriver] AiDriverAgent prefab missing at Resources/{_profile.PrefabResourcePath}.prefab (version={_profile.VersionId}).");
                 return;
             }
 
@@ -141,7 +141,7 @@ namespace UnityPpoRacingTrainer.Core.Ghost.Simulation
                     if (model != null)
                     {
                         brain.Model = model;
-                        Debug.Log($"[GhostDriver] Loaded model {model.name} (version={_profile.Version}).");
+                        Debug.Log($"[GhostDriver] Loaded model {model.name} (version={_profile.VersionId}).");
                     }
                     else
                     {

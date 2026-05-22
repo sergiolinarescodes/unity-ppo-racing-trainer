@@ -24,21 +24,18 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
         private readonly Func<IRewardShaper> _rewardShaperFactory;
         private readonly StageProfileRegistry _stageProfiles;
         private readonly CarParameters _physics;
-        private readonly AiDriverVersion _versionEnum;
 
         public ManifestBackedVersionProfile(
             VersionManifest manifest,
-            Func<IRewardShaper> rewardShaperFactory,
-            AiDriverVersion versionEnum)
+            Func<IRewardShaper> rewardShaperFactory)
         {
             _manifest = manifest ?? throw new ArgumentNullException(nameof(manifest));
             _rewardShaperFactory = rewardShaperFactory ?? throw new ArgumentNullException(nameof(rewardShaperFactory));
-            _versionEnum = versionEnum;
             _physics = BuildPhysics(manifest.Physics);
             _stageProfiles = BuildStages(manifest.Stages);
         }
 
-        public AiDriverVersion Version => _versionEnum;
+        public string VersionId => _manifest.VersionId;
         public string BehaviorName => _manifest.MlAgents.BehaviorName;
         public string PrefabResourcePath => _manifest.Runtime.PrefabResourcePath;
         public string OnnxResourcePath => _manifest.Runtime.OnnxResourcePath;

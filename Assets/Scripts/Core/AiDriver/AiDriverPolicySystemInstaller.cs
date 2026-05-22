@@ -8,6 +8,7 @@ using UnityPpoRacingTrainer.Core.AiDriver.Race;
 using UnityPpoRacingTrainer.Core.AiDriver.Training;
 using UnityPpoRacingTrainer.Core.AiDriver.Training.Stages;
 using UnityPpoRacingTrainer.Core.AiDriver.Versions;
+using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 using UnityPpoRacingTrainer.Core.Track.Loop;
 using Reflex.Core;
 using Unidad.Core.Bootstrap;
@@ -41,7 +42,8 @@ namespace UnityPpoRacingTrainer.Core.AiDriver
                     c.TryResolveOptional<IDraftService>(),
                     c.TryResolveOptional<IStageIdProvider>(),
                     c.TryResolveOptional<IActiveStageProfile>(),
-                    c.TryResolveOptional<IRaceCoordinator>()),
+                    c.TryResolveOptional<IRaceCoordinator>(),
+                    c.TryResolveOptional<IObservationWriter>()),
                 typeof(IAiDriverPolicyService));
         }
 

@@ -86,7 +86,7 @@ namespace UnityPpoRacingTrainer.Core.Tests.AiDriver.Versions.Manifest
             // ManifestBackedVersionProfile.BuildPhysics() applies the same
             // cell-size scaling. They must match bit-for-bit.
             var profile = new ManifestBackedVersionProfile(_latest,
-                () => NullRewardShaper.Instance, AiDriverVersion.Latest);
+                () => NullRewardShaper.Instance);
             Assert.That(profile.PhysicsDefaults, Is.EqualTo(AiDriverPhysicsDefaults.Latest),
                 "latest.json physics drifted from AiDriverPhysicsDefaults.Latest. " +
                 "Sync the two — the C# constant is the source of truth for the canonical.");
@@ -96,7 +96,7 @@ namespace UnityPpoRacingTrainer.Core.Tests.AiDriver.Versions.Manifest
         public void Latest_Stages_Are_The_Six_Curriculum_Stages()
         {
             var profile = new ManifestBackedVersionProfile(_latest,
-                () => NullRewardShaper.Instance, AiDriverVersion.Latest);
+                () => NullRewardShaper.Instance);
             var registry = profile.StageProfiles;
 
             // Hand-coded feature bitmasks from the original C# StageProfiles.cs
