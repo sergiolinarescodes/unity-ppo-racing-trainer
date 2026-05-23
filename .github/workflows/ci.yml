@@ -46,8 +46,17 @@ jobs:
           python -m pip install ruff==0.5.7
           ruff check tools
 
-      - name: Settings.json parses as JSON
-        run: python -c "import json; json.load(open('settings.json'))"
+      - name: Version manifests parse as JSON
+        run: |
+          python -c "
+          import json, glob, sys
+          paths = sorted(glob.glob('Assets/_Bootstrap/Configs/Versions/*.json'))
+          if not paths:
+              sys.exit('no version manifests found under Assets/_Bootstrap/Configs/Versions/')
+          for p in paths:
+              json.load(open(p, encoding='utf-8'))
+              print('ok', p)
+          "
 
       - name: Dashboard imports
         run: python -c "import importlib.util, pathlib; spec=importlib.util.spec_from_file_location('srv', 'tools/dashboard/server.py'); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)"
