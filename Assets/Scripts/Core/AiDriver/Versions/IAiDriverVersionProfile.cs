@@ -1,6 +1,5 @@
 using UnityPpoRacingTrainer.Core.AiDriver.Physics;
 using UnityPpoRacingTrainer.Core.AiDriver.Training;
-using UnityPpoRacingTrainer.Core.AiDriver.Training.Stages;
 using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 
 namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
@@ -79,16 +78,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
         /// Snapshots trained with a stripped-down environment leave this
         /// false so the side-systems stay dormant; Latest is true.</summary>
         bool RequiresSideSystems { get; }
-
-        /// <summary>
-        /// Curriculum-stage registry for this version. Snapshots that
-        /// predate the full curriculum return a smaller registry; Latest
-        /// returns the 6-profile curriculum registry (Stage0SoloWarmup …
-        /// Stage5PackSelfPlay). <see cref="IActiveStageProfile"/> consults
-        /// this property at episode start to resolve "what is active at the
-        /// current <c>stage_id</c>" — there is no global stage registry.
-        /// </summary>
-        IStageProfileRegistry StageProfiles { get; }
 
         /// <summary>
         /// Raw manifest backing this profile. Exposed so extension installers

@@ -9,7 +9,6 @@ using UnityPpoRacingTrainer.Core.AiDriver.Race;
 using UnityPpoRacingTrainer.Core.AiDriver.Training;
 using UnityPpoRacingTrainer.Core.AiDriver.Training.Generation;
 using UnityPpoRacingTrainer.Core.AiDriver.Training.Rewards;
-using UnityPpoRacingTrainer.Core.AiDriver.Training.Stages;
 using UnityPpoRacingTrainer.Core.AiDriver.Versions;
 using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 using UnityPpoRacingTrainer.Core.Track;
@@ -34,9 +33,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver
         public void Install(ContainerBuilder builder)
         {
 #if AIDRIVER_TRAINING
-            builder.AddSingleton(_ => new TrainingStageProvider(),
-                typeof(IStageIdProvider));
-
             builder.AddSingleton(c => new EpisodeRunner(
                     c.Resolve<IEventBus>(),
                     c.Resolve<ICarSimulationService>(),
@@ -52,7 +48,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver
             builder.AddSingleton(c => new RewardShaper(
                     c.Resolve<IEventBus>(),
                     c.Resolve<ITrainingSettingsService>(),
-                    c.Resolve<IActiveStageProfile>(),
                     c.TryResolveOptional<ITirePhysicsService>(),
                     c.TryResolveOptional<IFuelService>(),
                     c.TryResolveOptional<IDraftService>(),
@@ -63,11 +58,11 @@ namespace UnityPpoRacingTrainer.Core.AiDriver
                 typeof(IRewardShaper));
 
             // Resolved extra reward channels (plug-in surface). The active
-            // version manifest lists channel ids + their stage gates; this
-            // binding turns those into IRewardChannel instances by looking
-            // each id up in IRewardChannelRegistry. Manifests with no entries
-            // resolve to an empty list and the composite source falls through
-            // to the base + shaper path unchanged.
+            // version manifest lists channel ids; this binding turns those
+            // into IRewardChannel instances by looking each id up in
+            // IRewardChannelRegistry. Manifests with no entries resolve to an
+            // empty list and the composite source falls through to the base +
+            // shaper path unchanged.
             builder.AddSingleton(c =>
             {
                 var profile = c.Resolve<IAiDriverVersionProfile>();
@@ -80,7 +75,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver
                 {
                     if (registry.TryGet(e.Id, out var channel))
                     {
-                        list.Add(new ActiveRewardChannel(channel, e.ActiveInStages));
+                        list.Add(new ActiveRewardChannel(channel));
                     }
                     else
                     {
@@ -101,8 +96,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver
                     c.Resolve<EpisodeRunner>(),
                     c.TryResolveOptional<IRewardShaper>(),
                     c.Resolve<ITimeProvider>(),
-                    c.TryResolveOptional<ActiveRewardChannels>(),
-                    c.TryResolveOptional<IActiveStageProfile>()),
+                    c.TryResolveOptional<ActiveRewardChannels>()),
                 typeof(IEpisodeRewardSource));
 
             builder.AddSingleton(c => new ShapeBasedLoopGenerator(
@@ -125,7 +119,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver
                     c.Resolve<IProceduralLoopGenerator>(),
                     c.Resolve<IClosedLoopService>(),
                     c.Resolve<IAiDriverPolicyService>(),
-                    stageIdProvider: null,
                     coord: c.TryResolveOptional<IRaceCoordinator>()),
                 typeof(TrainingDirector));
 #endif

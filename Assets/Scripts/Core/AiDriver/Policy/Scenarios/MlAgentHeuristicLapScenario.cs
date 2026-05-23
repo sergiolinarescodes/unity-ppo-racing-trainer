@@ -176,8 +176,13 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy.Scenarios
             // diagnostic heuristic-lap scene; obs/physics route through the
             // canonical path.
             var manifests = Versions.Manifest.VersionManifestLoader.LoadAll();
+            if (!manifests.TryGetValue("latest", out var latestManifest))
+            {
+                Debug.LogError("[MlAgentHeuristicLapScenario] latest manifest missing under Assets/_Bootstrap/Configs/Versions/; using baked defaults.");
+                latestManifest = new Versions.Manifest.VersionManifest();
+            }
             var versionProfile = new Versions.Manifest.ManifestBackedVersionProfile(
-                manifests["latest"],
+                latestManifest,
                 () => NullRewardShaper.Instance);
             _policyService = new AiDriverPolicyService(_eventBus, _carSim, _trackQuery, _loopService, _profileRegistry, versionProfile);
             // Scenario uses fixed lap-start spawn (longest-straight midpoint).

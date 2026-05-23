@@ -8,8 +8,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training.Curriculum
     /// equal 1); see <see cref="Generation.LoopBuilder.PickPiece"/>.
     /// </summary>
     /// <param name="Id">
-    /// Stable integer key for the stage. Used by the policy service and by
-    /// ML-Agents' <c>EnvironmentParameters.stage_id</c> lesson switch.
+    /// Stable integer key for the generation knob.
     /// </param>
     /// <param name="Name">
     /// Human-readable label (e.g. "Warmup", "Easy", "Hard", "Authored"). Used in

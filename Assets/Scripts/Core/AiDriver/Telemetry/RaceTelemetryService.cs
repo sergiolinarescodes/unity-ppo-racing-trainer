@@ -165,7 +165,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Telemetry
                 captured_at_utc = _raceStartUtc.ToString("o"),
                 env_pid = context.EnvPid != 0 ? context.EnvPid : SafePid(),
                 episode_index = context.EpisodeIndex,
-                stage_id = context.StageId,
                 sample_hz = SampleHz,
                 circuit = new CircuitInfoDto
                 {
@@ -393,7 +392,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Telemetry
             {
                 _pendingCircuitContext = new RaceContext(
                     _processEpisodeCounter,
-                    e.StageId,
                     e.CircuitId,
                     e.LengthM,
                     e.PieceCount,
@@ -409,7 +407,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Telemetry
             else ResetInFlight();
             BeginRace(new RaceContext(
                 _processEpisodeCounter,
-                e.StageId,
                 e.CircuitId,
                 e.LengthM,
                 e.PieceCount,
@@ -650,7 +647,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Telemetry
         {
             int pid = SafePid();
             string circuit = TrainingTelemetryContext.LastCircuitId ?? string.Empty;
-            return new RaceContext(_processEpisodeCounter, 0, circuit, 0f, 0, pid);
+            return new RaceContext(_processEpisodeCounter, circuit, 0f, 0, pid);
         }
 
         private DriverInFlight GetOrAddDriver(CarId id)

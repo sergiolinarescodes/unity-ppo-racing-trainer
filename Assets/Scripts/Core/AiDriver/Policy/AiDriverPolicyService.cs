@@ -7,7 +7,6 @@ using UnityPpoRacingTrainer.Core.AiDriver.Physics.Fuel;
 using UnityPpoRacingTrainer.Core.AiDriver.Physics.Tires;
 using UnityPpoRacingTrainer.Core.AiDriver.Race;
 using UnityPpoRacingTrainer.Core.AiDriver.Training;
-using UnityPpoRacingTrainer.Core.AiDriver.Training.Stages;
 using UnityPpoRacingTrainer.Core.AiDriver.Versions;
 using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 using UnityPpoRacingTrainer.Core.Track.Loop;
@@ -53,8 +52,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy
         private readonly IDraftService _draft;
         private readonly IAiDriverVersionProfile _versionProfile;
         private readonly IObservationWriter _writer;
-        private readonly Training.IStageIdProvider _stage;
-        private readonly IActiveStageProfile _active;
         // Optional. When non-null + IsRaceScoped, ApplyActions overrides the
         // policy's steer/throttle to zero for drivers in Finished/Eliminated
         // state so a resolved car coasts to a stop instead of continuing to
@@ -77,8 +74,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy
             ITirePhysicsService tires = null,
             IFuelService fuel = null,
             IDraftService draft = null,
-            Training.IStageIdProvider stage = null,
-            IActiveStageProfile active = null,
             IRaceCoordinator coord = null,
             IObservationWriter writer = null) : base(eventBus)
         {
@@ -92,30 +87,9 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy
             _tires = tires;
             _fuel = fuel;
             _draft = draft;
-            _stage = stage;
-            _active = active;
             _coord = coord;
 
             Subscribe<DriverPersonalityChangedEvent>(OnPersonalityChanged);
-        }
-
-        // True iff this service is running inside a ML-Agents training session
-        // (an EnvironmentParameters resolver is attached). Inference scenes
-        // and Scenario Browser scenes leave Resolver null and therefore see
-        // the full grid + opponent observations regardless of stage profile.
-        private bool IsInTraining => _stage != null && _stage.Resolver != null;
-
-        // Warmup mode is training stage 0 — declared by the active stage
-        // profile via ExpectedOpponentCount == 0. Inference scenes (no
-        // resolver) always return false so the full grid + collisions show.
-        private bool IsWarmup
-        {
-            get
-            {
-                if (!IsInTraining) return false;
-                if (_active != null) return _active.Current.ExpectedOpponentCount == 0;
-                return _stage.Resolve() == 0;
-            }
         }
 
         private void OnPersonalityChanged(DriverPersonalityChangedEvent e)
@@ -237,29 +211,18 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy
         // Then ×1.5 (→ 1.8) so row N is meaningfully ahead of row N+1 —
         // gives lap-1 traffic more room before the field tangles.
         private const float GridRowSpacing = 1.8f;
-        // Per-car ±lateral jitter applied during stage-0 warmup so all-same-arc
-        // spawns diverge instantly without waiting for policy action noise.
-        private const float WarmupLateralJitter = 0.05f;
-
         public void SetGridSlot(CarId carId, int slot)
         {
             if (!_agents.TryGetValue(carId, out var rec)) return;
             _agents[carId] = rec with { GridSlot = Mathf.Max(0, slot) };
         }
 
-        // Translates a grid slot (or warmup jitter) into (lateral, back)
-        // offsets in cell-units relative to the lap-start arc. Stage-0 warmup
-        // collapses the whole grid onto baseArc with a tiny lateral jitter so
-        // every agent starts on the same line but diverges immediately.
+        // Translates a grid slot into (lateral, back) offsets in cell-units
+        // relative to the lap-start arc. Slot 0 sits at the canonical anchor;
+        // higher slots fan out across GridColumns with GridRowSpacing per row.
         private (float lateral, float back) ComputeSpawnOffset(int slot, System.Random rng)
         {
-            if (IsWarmup)
-            {
-                float j = rng != null
-                    ? (float)((rng.NextDouble() * 2.0 - 1.0) * WarmupLateralJitter)
-                    : 0f;
-                return (j, 0f);
-            }
+            _ = rng;
             if (slot <= 0) return (0f, 0f);
             int col = slot % GridColumns;
             int row = slot / GridColumns;
@@ -388,37 +351,14 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy
 
         private int WriteLatestExtras(CarId carId, AgentRecord rec, CarState state, float[] obsBuf, int offset)
         {
-            // Per-channel observation gating. Inference scenes (no training
-            // resolver) show every channel — observers/dashboards expect the
-            // full vector. During training each channel is consulted via
-            // IStageProfile so "what the policy sees" is declared in one
-            // place, not split between this method and yaml stage_id rules.
-            // Draft obs piggybacks on OpponentObservations (draft state is
-            // computed from other cars' positions).
-            bool showOpponents, showTires, showFuel, showDraft, showPersonality;
-            if (!IsInTraining)
-            {
-                showOpponents = showTires = showFuel = showDraft = showPersonality = true;
-            }
-            else if (_active != null)
-            {
-                showOpponents   = _active.Has(StageFeature.OpponentObservations);
-                showTires       = _active.Has(StageFeature.TireObservations);
-                showFuel        = _active.Has(StageFeature.FuelObservations);
-                showDraft       = _active.Has(StageFeature.OpponentObservations);
-                showPersonality = _active.Has(StageFeature.PersonalityObservations);
-            }
-            else
-            {
-                // Legacy fallback for trainer scenes where the stage-profile
-                // installer somehow didn't run. Mirrors the pre-refactor rules.
-                int stage = _stage.Resolve();
-                showOpponents   = stage >= 4;
-                showTires       = stage >= 1;
-                showFuel        = stage >= 2;
-                showDraft       = stage >= 4;
-                showPersonality = stage >= 4;
-            }
+            // Every channel always on. The 60-float layout is fixed per the
+            // RacingObservationLayout schema; observers and the policy both
+            // expect the full vector populated.
+            const bool showOpponents = true;
+            const bool showTires = true;
+            const bool showFuel = true;
+            const bool showDraft = true;
+            const bool showPersonality = true;
 
             int activeCount = Mathf.Max(1, _carSim.ActiveCars.Count);
             Span<RacingObservationLayout.OtherCar> others =

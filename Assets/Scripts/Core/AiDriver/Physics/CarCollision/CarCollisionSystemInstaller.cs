@@ -1,4 +1,3 @@
-using UnityPpoRacingTrainer.Core.AiDriver.Training;
 using Reflex.Core;
 using Unidad.Core.Abstractions;
 using Unidad.Core.Bootstrap;
@@ -13,8 +12,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Physics.CarCollision
         {
             builder.AddSingleton(c => new CarCollisionService(
                     c.Resolve<IEventBus>(),
-                    c.Resolve<ICarSimulationService>(),
-                    c.TryResolveOptional<IStageIdProvider>()),
+                    c.Resolve<ICarSimulationService>()),
                 typeof(ICarCollisionService),
                 typeof(IFixedTickable));
         }

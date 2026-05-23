@@ -15,17 +15,15 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Telemetry
     public readonly struct RaceContext
     {
         public readonly long EpisodeIndex;
-        public readonly int StageId;
         public readonly string CircuitId;
         public readonly float CircuitLengthM;
         public readonly int CircuitPieceCount;
         public readonly int EnvPid;
 
-        public RaceContext(long episodeIndex, int stageId, string circuitId,
+        public RaceContext(long episodeIndex, string circuitId,
             float circuitLengthM, int circuitPieceCount, int envPid)
         {
             EpisodeIndex = episodeIndex;
-            StageId = stageId;
             CircuitId = circuitId ?? string.Empty;
             CircuitLengthM = circuitLengthM;
             CircuitPieceCount = circuitPieceCount;
@@ -128,7 +126,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Telemetry
         public string captured_at_utc;
         public int env_pid;
         public long episode_index;
-        public int stage_id;
         public int sample_hz;     // sampling rate of DriverRaceRecordDto.samples (5 by default)
         public CircuitInfoDto circuit;
         public float duration_s;
@@ -154,7 +151,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Telemetry
         public string captured_at_utc;
         public int env_pid;
         public long episode_index;
-        public int stage_id;
         public string circuit_id;
         public float duration_s;
         public int driver_count;
@@ -167,7 +163,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Telemetry
                 captured_at_utc = r.captured_at_utc,
                 env_pid = r.env_pid,
                 episode_index = r.episode_index,
-                stage_id = r.stage_id,
                 circuit_id = r.circuit != null ? r.circuit.id : string.Empty,
                 duration_s = r.duration_s,
                 driver_count = r.drivers != null ? r.drivers.Count : 0,

@@ -6,7 +6,6 @@ using UnityPpoRacingTrainer.Core.AiDriver.Physics.Tires;
 using UnityPpoRacingTrainer.Core.AiDriver.Policy;
 using UnityPpoRacingTrainer.Core.AiDriver.Race;
 using UnityPpoRacingTrainer.Core.AiDriver.Training;
-using UnityPpoRacingTrainer.Core.AiDriver.Training.Stages;
 using UnityPpoRacingTrainer.Core.AiDriver.Versions;
 using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 using UnityPpoRacingTrainer.Core.Track.Loop;
@@ -40,8 +39,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver
                     c.TryResolveOptional<ITirePhysicsService>(),
                     c.TryResolveOptional<IFuelService>(),
                     c.TryResolveOptional<IDraftService>(),
-                    c.TryResolveOptional<IStageIdProvider>(),
-                    c.TryResolveOptional<IActiveStageProfile>(),
                     c.TryResolveOptional<IRaceCoordinator>(),
                     c.TryResolveOptional<IObservationWriter>()),
                 typeof(IAiDriverPolicyService));

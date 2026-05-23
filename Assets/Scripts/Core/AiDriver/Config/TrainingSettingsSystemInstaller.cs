@@ -11,12 +11,27 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Config
     /// Registers <see cref="ITrainingSettingsService"/>. Add to
     /// <c>TrainerBootstrap.RegisterInstallers</c> FIRST so every downstream
     /// service that injects settings sees a populated value.
+    ///
+    /// The <c>activeVersionId</c> picks which <c>&lt;id&gt;.json</c> manifest
+    /// under <c>Assets/_Bootstrap/Configs/Versions/</c> is projected into
+    /// <see cref="TrainingSettings"/>. Same string TrainerBootstrap passes to
+    /// <c>AiDriverVersionsSystemInstaller</c> — keeps reward shaper / tire /
+    /// physics consts in sync with the resolved version profile.
     /// </summary>
     public sealed class TrainingSettingsSystemInstaller : ISystemInstaller
     {
+        private readonly string _activeVersionId;
+
+        public TrainingSettingsSystemInstaller(string activeVersionId)
+        {
+            _activeVersionId = string.IsNullOrEmpty(activeVersionId) ? "latest" : activeVersionId;
+        }
+
         public void Install(ContainerBuilder builder)
         {
-            builder.AddSingleton(typeof(TrainingSettingsService), typeof(ITrainingSettingsService));
+            var captured = _activeVersionId;
+            builder.AddSingleton(_ => new TrainingSettingsService(captured),
+                typeof(TrainingSettingsService), typeof(ITrainingSettingsService));
         }
 
         public ISystemTestFactory CreateTestFactory() => new TrainingSettingsTestFactory();

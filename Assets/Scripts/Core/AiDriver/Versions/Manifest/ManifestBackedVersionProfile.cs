@@ -2,7 +2,6 @@ using System;
 using UnityPpoRacingTrainer.Core.AiDriver.Config;
 using UnityPpoRacingTrainer.Core.AiDriver.Physics;
 using UnityPpoRacingTrainer.Core.AiDriver.Training;
-using UnityPpoRacingTrainer.Core.AiDriver.Training.Stages;
 using UnityPpoRacingTrainer.Core.Track;
 
 namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
@@ -10,19 +9,17 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
     /// <summary>
     /// Data-driven <see cref="IAiDriverVersionProfile"/> backed by a
     /// <see cref="VersionManifest"/>. Reads physics, observation, runtime,
-    /// drafting, and stage data straight from the manifest; resolves the
-    /// reward shaper through a lazy <c>Func</c> to dodge the DI cycle
-    /// (profile → shaper → IActiveStageProfile → profile).
+    /// and drafting data straight from the manifest; resolves the reward
+    /// shaper through a lazy <c>Func</c> to dodge the DI cycle.
     ///
-    /// One instance per known version is created by
+    /// One instance per known version id is created by
     /// <c>AiDriverVersionsSystemInstaller</c> at bootstrap; the registry
-    /// picks the active one by enum.
+    /// picks the active one by id.
     /// </summary>
     internal sealed class ManifestBackedVersionProfile : IAiDriverVersionProfile
     {
         private readonly VersionManifest _manifest;
         private readonly Func<IRewardShaper> _rewardShaperFactory;
-        private readonly StageProfileRegistry _stageProfiles;
         private readonly CarParameters _physics;
 
         public ManifestBackedVersionProfile(
@@ -32,7 +29,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
             _manifest = manifest ?? throw new ArgumentNullException(nameof(manifest));
             _rewardShaperFactory = rewardShaperFactory ?? throw new ArgumentNullException(nameof(rewardShaperFactory));
             _physics = BuildPhysics(manifest.Physics);
-            _stageProfiles = BuildStages(manifest.Stages);
         }
 
         public string VersionId => _manifest.VersionId;
@@ -45,7 +41,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
         public DraftingSettings Drafting => _manifest.Drafting;
         public IRewardShaper RewardShaper => _rewardShaperFactory();
         public bool RequiresSideSystems => _manifest.Runtime.RequiresSideSystems;
-        public IStageProfileRegistry StageProfiles => _stageProfiles;
 
         public VersionManifest Manifest => _manifest;
 
@@ -99,43 +94,5 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
                 StraightLineAeroSteerThreshold: p.StraightLineAeroSteerThreshold);
         }
 
-        private static StageProfileRegistry BuildStages(System.Collections.Generic.IReadOnlyList<StageManifestEntry> stages)
-        {
-            var reg = new StageProfileRegistry();
-            foreach (var entry in stages)
-            {
-                reg.Register(entry.Id, new ManifestStageProfile(entry));
-            }
-            return reg;
-        }
-    }
-
-    /// <summary>
-    /// Manifest-driven <see cref="IStageProfile"/>. Replaces the 6 hand-written
-    /// classes in <c>StageProfiles.cs</c> once Phase 4 deletes them; in Phase 1
-    /// it is reachable only through <see cref="ManifestBackedVersionProfile"/>
-    /// (which is itself dormant).
-    /// </summary>
-    internal sealed class ManifestStageProfile : IStageProfile
-    {
-        private readonly StageManifestEntry _entry;
-        private readonly StageFeature _features;
-        private readonly FuelSamplingMode _fuel;
-        private readonly PersonalitySamplingMode _personality;
-
-        public ManifestStageProfile(StageManifestEntry entry)
-        {
-            _entry = entry ?? throw new ArgumentNullException(nameof(entry));
-            _features = StageFeatureCatalog.Parse(entry.Features);
-            _fuel = StageFeatureCatalog.ParseFuel(entry.FuelSampling);
-            _personality = StageFeatureCatalog.ParsePersonality(entry.PersonalitySampling);
-        }
-
-        public int StageId => _entry.Id;
-        public string Name => _entry.Name;
-        public StageFeature Features => _features;
-        public int ExpectedOpponentCount => _entry.ExpectedOpponentCount;
-        public FuelSamplingMode Fuel => _fuel;
-        public PersonalitySamplingMode Personality => _personality;
     }
 }

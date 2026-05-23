@@ -55,26 +55,19 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training.Scenarios
         public ProceduralLoopGenerationScenario() : base(new TestScenarioDefinition(
             "ai-driver-procedural-loop",
             "AI Driver — Procedural Loop Generation (Live)",
-            "Runs the procedural loop generator with the chosen seed + curriculum " +
-            "stage and renders the result via TrackRibbonService. Same seed + stage " +
-            "produces an identical track every time.",
+            "Runs the procedural loop generator with the chosen seed and renders " +
+            "the result via TrackRibbonService. Same seed produces an identical " +
+            "track every time.",
             new[]
             {
                 new ScenarioParameter("seed", "Seed", typeof(int), 1234, 0, 1_000_000),
-                new ScenarioParameter("stageId", "Stage Id (1-4)", typeof(int), 1, 1, 4),
             }))
         { }
 
         protected override void ExecuteInternal(ScenarioParameterOverrides overrides)
         {
             int seed = ResolveParam<int>(overrides, "seed");
-            int stageId = ResolveParam<int>(overrides, "stageId");
-
-            if (!CurriculumStages.TryGet(stageId, out var stage))
-            {
-                Debug.LogWarning($"[ProcLoopGen] Unknown stageId={stageId}, falling back to stage 1.");
-                stage = CurriculumStages.All[0];
-            }
+            var stage = CurriculumStages.Default;
 
             _eventBus = new ScenarioEventBus();
             _factory = new ScenarioGameObjectFactory();

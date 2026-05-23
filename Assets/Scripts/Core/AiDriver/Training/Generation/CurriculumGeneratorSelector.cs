@@ -11,9 +11,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training.Generation
 {
     /// <summary>
     /// Routes <see cref="IProceduralLoopGenerator.Generate"/> to a random
-    /// authored-closure circuit on every episode, regardless of stage id.
-    /// Stage id is still consumed by the reward shaper for feature gating
-    /// (fuel / tire / opponents / personality archetype). <see cref="ShapeBasedLoopGenerator"/>
+    /// authored-closure circuit on every episode. <see cref="ShapeBasedLoopGenerator"/>
     /// is retained ONLY as a crash-time fallback for the empty-library case
     /// (it should never fire in production — the authored corpus has ~92
     /// circuits).
@@ -23,14 +21,13 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training.Generation
         private readonly ShapeBasedLoopGenerator _shapeBased;
         private readonly ITrackPlacementService _placement;
         private readonly IClosedLoopService _loop;
-        private readonly Dictionary<int, List<string>> _libraryFiles = new();
         private readonly System.Random _rng = new();
 
         /// <summary>
         /// When set to a non-empty 8-char circuit id (e.g. "08c66d8e"), the
-        /// selector loads ONLY that circuit from any library stage's directory
-        /// and replays it on every Generate call. Empty = random pick.
-        /// Set by <c>TrainerBootstrap.forceCircuitId</c> for editor inference.
+        /// selector loads ONLY that circuit from the library and replays it
+        /// on every Generate call. Empty = random pick. Set by
+        /// <c>TrainerBootstrap.forceCircuitId</c> for editor inference.
         /// </summary>
         public string ForcedCircuitId { get; set; }
 
@@ -46,11 +43,10 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training.Generation
 
         public GenerationResult Generate(in GenerationConfig cfg)
         {
-            // Forced-id wins over stage routing: if a specific circuit is
-            // pinned (editor inference / debugging), replay it directly even
-            // when the stage maps to recipe generation, an empty library dir,
-            // or the authored corpus. The caller is responsible for clearing
-            // the field before resuming production training.
+            // Forced-id wins over library routing: if a specific circuit is
+            // pinned (editor inference / debugging), replay it directly. The
+            // caller is responsible for clearing the field before resuming
+            // production training.
             string forced = ForcedCircuitId;
             if (!string.IsNullOrEmpty(forced))
             {
@@ -59,50 +55,24 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training.Generation
                 {
                     var result = TryReplayPath(forcedPath);
                     if (result.Success) return result;
-                    Debug.LogWarning($"[CurriculumSelector] Forced circuit '{forced}' failed to replay; falling back to stage routing.");
+                    Debug.LogWarning($"[CurriculumSelector] Forced circuit '{forced}' failed to replay; falling back to library routing.");
                 }
                 else
                 {
-                    Debug.LogWarning($"[CurriculumSelector] Forced circuit id '{forced}' not found in any library; falling back to stage routing.");
+                    Debug.LogWarning($"[CurriculumSelector] Forced circuit id '{forced}' not found in the library; falling back to library routing.");
                 }
             }
 
-            string libDir = CurriculumStages.LibraryDirFor(cfg.Stage.Id);
-            if (libDir == null)
-                return _shapeBased.Generate(cfg);
-
-            return TryReplayFromLibrary(cfg.Stage.Id, libDir, cfg);
+            return TryReplayFromLibrary(CurriculumStages.LibraryDir, cfg);
         }
 
-        private GenerationResult TryReplayFromLibrary(int stageId, string dir, in GenerationConfig cfg)
+        private GenerationResult TryReplayFromLibrary(string dir, in GenerationConfig cfg)
         {
-            var files = GetFiles(stageId, dir);
+            var files = GetFiles(dir);
             if (files.Count == 0)
             {
-                Debug.LogWarning($"[CurriculumSelector] Library '{dir}' empty for stage {stageId}; falling back to ShapeBased.");
+                Debug.LogWarning($"[CurriculumSelector] Library '{dir}' empty; falling back to ShapeBased.");
                 return _shapeBased.Generate(cfg);
-            }
-
-            // ForcedCircuitId override: locate the JSON whose filename
-            // matches (without extension) and replay it. If it is not in
-            // this stage's dir, search all library dirs. If still not found,
-            // fall through to a random pick (warn once). Honoured on every
-            // stage including authored; clear the field on the bootstrap to
-            // resume rotation.
-            string forced = ForcedCircuitId;
-            if (!string.IsNullOrEmpty(forced))
-            {
-                string forcedPath = FindForcedCircuit(forced);
-                if (forcedPath != null)
-                {
-                    var result = TryReplayPath(forcedPath);
-                    if (result.Success) return result;
-                    Debug.LogWarning($"[CurriculumSelector] Forced circuit '{forced}' failed to replay; falling back to random.");
-                }
-                else
-                {
-                    Debug.LogWarning($"[CurriculumSelector] Forced circuit id '{forced}' not found in any library; falling back to random.");
-                }
             }
 
             for (int attempt = 0; attempt < 4; attempt++)
@@ -146,27 +116,23 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training.Generation
                 }
 
                 string circuitName = Path.GetFileNameWithoutExtension(path);
-                Debug.Log($"[CurriculumSelector] stage={stageId} circuit={circuitName} pieces={placed} length={closed.TotalLength:F1}");
+                Debug.Log($"[CurriculumSelector] circuit={circuitName} pieces={placed} length={closed.TotalLength:F1}");
                 TrainingTelemetryContext.LastCircuitId = circuitName;
                 TrainingTelemetry.EmitCircuitChange(circuitName, placed, closed.TotalLength);
                 return GenerationResult.Ok(closed.Id, placed, closed.TotalLength);
             }
 
-            Debug.LogError($"[CurriculumSelector] All 4 replay attempts failed for stage {stageId} dir={dir}; reusing previous loop.");
+            Debug.LogError($"[CurriculumSelector] All 4 replay attempts failed for dir={dir}; reusing previous loop.");
             return GenerationResult.Failed("library replay exhausted");
         }
 
-        private string FindForcedCircuit(string id)
+        private static string FindForcedCircuit(string id)
         {
-            // Search circuits/stage_*/ directories for "<id>.json".
-            const string root = "circuits";
-            if (!Directory.Exists(root)) return null;
-            foreach (var stageDir in Directory.GetDirectories(root, "stage_*"))
-            {
-                string p = Path.Combine(stageDir, id + ".json");
-                if (File.Exists(p)) return p;
-            }
-            return null;
+            // Search the authored-closure library for "<id>.json".
+            string libDir = CurriculumStages.LibraryDir;
+            if (!Directory.Exists(libDir)) return null;
+            string p = Path.Combine(libDir, id + ".json");
+            return File.Exists(p) ? p : null;
         }
 
         private GenerationResult TryReplayPath(string path)
@@ -207,10 +173,9 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training.Generation
             return GenerationResult.Ok(closed.Id, placed, closed.TotalLength);
         }
 
-        private List<string> GetFiles(int stageId, string dir)
+        private static List<string> GetFiles(string dir)
         {
-            // Every stage now replays from the authored-closure library, so
-            // rescan on every call — newly authored circuits are picked up
+            // Rescan on every call so newly authored circuits are picked up
             // without restarting training. Folder is small (≤ a few hundred
             // files) and Generate runs once per episode; cost is negligible.
             var fresh = new List<string>();
@@ -219,7 +184,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training.Generation
                 foreach (var f in Directory.GetFiles(dir, "*.json"))
                     fresh.Add(f);
             }
-            _libraryFiles[stageId] = fresh;
             return fresh;
         }
 
@@ -227,8 +191,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training.Generation
         private sealed class CircuitFile
         {
             public string Id;
-            public int StageId;
-            public string StageName;
             public float TotalLength;
             public int AnchorCount;
             public List<Placement> Placements;

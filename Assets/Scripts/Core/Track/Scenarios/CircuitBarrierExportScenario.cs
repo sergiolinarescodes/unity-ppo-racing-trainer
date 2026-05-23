@@ -13,7 +13,7 @@ using UnityEngine;
 namespace UnityPpoRacingTrainer.Core.Track.Scenarios
 {
     /// <summary>
-    /// Re-exports every circuit JSON under <c>circuits/stage_*/*.json</c> with the
+    /// Re-exports every circuit JSON under <c>circuits/*/*.json</c> with the
     /// current backend's wall geometry baked in. For each file: replay every
     /// placement through the live <see cref="TrackPlacementService"/> on a flat terrain,
     /// read <see cref="TrackCollisionService.AllWalls"/>, and inject the <c>Walls</c>
@@ -51,7 +51,7 @@ namespace UnityPpoRacingTrainer.Core.Track.Scenarios
         public CircuitBarrierExportScenario() : base(new TestScenarioDefinition(
             "circuit-barrier-export",
             "Circuit Barrier Re-Export",
-            "Walks circuits/stage_*/*.json, replays each via TrackPlacementService, and " +
+            "Walks circuits/*/*.json, replays each via TrackPlacementService, and " +
             "bakes the current backend's Walls + Kerbs into the JSON. Quarantines circuits " +
             "that no longer replay (fakes). Run after any AutoBarriers / piece-definition change.",
             Array.Empty<ScenarioParameter>()))
@@ -74,10 +74,10 @@ namespace UnityPpoRacingTrainer.Core.Track.Scenarios
             _written = 0;
             _quarantined = 0;
 
-            foreach (var stageDir in Directory.GetDirectories(root, "stage_*"))
+            foreach (var subDir in Directory.GetDirectories(root))
             {
-                foreach (var jsonPath in Directory.GetFiles(stageDir, "*.json"))
-                    Process(jsonPath, stageDir);
+                foreach (var jsonPath in Directory.GetFiles(subDir, "*.json"))
+                    Process(jsonPath, subDir);
             }
 
             Debug.Log($"[CircuitBarrierExport] root={root} processed={_processed} " +
@@ -135,7 +135,7 @@ namespace UnityPpoRacingTrainer.Core.Track.Scenarios
             return null;
         }
 
-        private void Process(string jsonPath, string stageDir)
+        private void Process(string jsonPath, string subDir)
         {
             _processed++;
             string text;
@@ -151,12 +151,12 @@ namespace UnityPpoRacingTrainer.Core.Track.Scenarios
             catch (Exception e)
             {
                 Debug.LogWarning($"[CircuitBarrierExport] parse fail {jsonPath}: {e.Message}");
-                Quarantine(jsonPath, stageDir, "parse-failed");
+                Quarantine(jsonPath, subDir, "parse-failed");
                 return;
             }
             if (rec == null || rec.Placements == null || rec.Placements.Count == 0)
             {
-                Quarantine(jsonPath, stageDir, "empty-or-null");
+                Quarantine(jsonPath, subDir, "empty-or-null");
                 return;
             }
 
@@ -171,7 +171,7 @@ namespace UnityPpoRacingTrainer.Core.Track.Scenarios
                 if (!r.Success)
                 {
                     Debug.LogWarning($"[CircuitBarrierExport] replay fail {Path.GetFileName(jsonPath)} piece {i} ({p.ShapeId}@{p.X},{p.Y},{p.Facing}): {r.Reason}");
-                    Quarantine(jsonPath, stageDir, $"replay-fail-piece-{i}");
+                    Quarantine(jsonPath, subDir, $"replay-fail-piece-{i}");
                     return;
                 }
             }
@@ -179,7 +179,7 @@ namespace UnityPpoRacingTrainer.Core.Track.Scenarios
             if (!_loop.TryGetCurrentLoop(out var closedLoop))
             {
                 Debug.LogWarning($"[CircuitBarrierExport] loop not closed after replay {Path.GetFileName(jsonPath)}");
-                Quarantine(jsonPath, stageDir, "loop-not-closed");
+                Quarantine(jsonPath, subDir, "loop-not-closed");
                 return;
             }
 
@@ -266,11 +266,11 @@ namespace UnityPpoRacingTrainer.Core.Track.Scenarios
             return sb.ToString();
         }
 
-        private void Quarantine(string jsonPath, string stageDir, string reason)
+        private void Quarantine(string jsonPath, string subDir, string reason)
         {
             try
             {
-                string qDir = Path.Combine(stageDir, QuarantineDir);
+                string qDir = Path.Combine(subDir, QuarantineDir);
                 Directory.CreateDirectory(qDir);
                 string dest = Path.Combine(qDir, Path.GetFileName(jsonPath));
                 if (File.Exists(dest)) File.Delete(dest);
@@ -390,8 +390,6 @@ namespace UnityPpoRacingTrainer.Core.Track.Scenarios
         private sealed class CircuitFile
         {
             public string Id;
-            public int StageId;
-            public string StageName;
             public float TotalLength;
             public int AnchorCount;
             public List<Placement> Placements;

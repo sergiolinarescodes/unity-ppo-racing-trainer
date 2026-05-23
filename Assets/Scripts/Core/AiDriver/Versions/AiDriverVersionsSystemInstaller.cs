@@ -35,8 +35,8 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
             // Registry holds one ManifestBackedVersionProfile per manifest in
             // the loaded dictionary, keyed by versionId string. Each profile
             // captures a Func<IRewardShaper> instead of resolving up-front to
-            // dodge the DI cycle (profile → shaper → IActiveStageProfile →
-            // profile). NullRewardShaper.Instance is the fallback when no
+            // dodge the DI cycle (profile → shaper → profile).
+            // NullRewardShaper.Instance is the fallback when no
             // real shaper is registered (player / inference builds with
             // AIDRIVER_TRAINING off).
             builder.AddSingleton(c =>

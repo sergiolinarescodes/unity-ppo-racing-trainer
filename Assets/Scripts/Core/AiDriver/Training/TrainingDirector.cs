@@ -22,9 +22,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
     /// <item>Per-episode random spawn anchor + heading jitter is handled inside
     /// <see cref="AiDriverPolicyService.BeginEpisode"/> — director only owns the loop.</item>
     /// </list>
-    /// Stage selection comes from an injected provider so the trainer can wire it to
-    /// <c>Academy.EnvironmentParameters.GetWithDefault("stage_id", 0)</c> while tests
-    /// pin a constant.
     /// </summary>
     internal sealed class TrainingDirector : SystemServiceBase
     {
@@ -57,11 +54,8 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
         private readonly IAiDriverPolicyService _policy;
         // Optional. When non-null and IsRaceScoped, EpisodeEndedEvent stops
         // driving regen — the race coordinator's RaceEndedEvent is the only
-        // boundary that fires BuildLoopForNextEpisode. Stages 1–4 keep the
-        // per-episode regen behaviour untouched.
+        // boundary that fires BuildLoopForNextEpisode.
         private readonly IRaceCoordinator _coord;
-
-        public Func<int> StageIdProvider { get; set; }
 
         private readonly int _baseSeed;
         private int _episodeIndex;
@@ -72,7 +66,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
         public Vector3 CurrentSpawnPosition { get; private set; }
         public float CurrentSpawnHeading { get; private set; }
         public bool InitialLoopReady => _initialLoopReady;
-        public int LastStageId { get; private set; }
         public string LastFailureReason { get; private set; }
 
         public TrainingDirector(
@@ -81,7 +74,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
             IProceduralLoopGenerator generator,
             IClosedLoopService loop,
             IAiDriverPolicyService policy,
-            Func<int> stageIdProvider = null,
             IRaceCoordinator coord = null) : base(eventBus)
         {
             _placement = placement;
@@ -89,7 +81,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
             _loop = loop;
             _policy = policy;
             _coord = coord;
-            StageIdProvider = stageIdProvider ?? (() => 0);
             _baseSeed = unchecked((int)(DateTime.UtcNow.Ticks & 0x7fffffff));
 
             Subscribe<EpisodeEndedEvent>(OnEpisodeEnded);
@@ -150,9 +141,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
         private void BuildLoopForNextEpisode()
         {
             _placement.Clear();
-            int stageId = StageIdProvider();
-            LastStageId = stageId;
-            var stage = CurriculumStages.TryGet(stageId, out var s) ? s : CurriculumStages.All[0];
+            var stage = CurriculumStages.Default;
 
             for (int attempt = 0; attempt < MaxGeneratorRetries; attempt++)
             {
@@ -177,8 +166,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
                     EventBus.Publish(new CircuitRegeneratedEvent(
                         TrainingTelemetryContext.LastCircuitId ?? string.Empty,
                         loop.TotalLength,
-                        loop.Anchors?.Count ?? 0,
-                        stageId));
+                        loop.Anchors?.Count ?? 0));
                     // Historical fastest-lap target. Read the
                     // permanent record file and broadcast the best lap for
                     // this circuit so RewardShaper can shape pace toward
@@ -233,6 +221,5 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
     public readonly record struct CircuitRegeneratedEvent(
         string CircuitId,
         float LengthM,
-        int PieceCount,
-        int StageId);
+        int PieceCount);
 }

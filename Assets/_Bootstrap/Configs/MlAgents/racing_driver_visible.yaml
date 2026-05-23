@@ -17,9 +17,7 @@ behaviors:
     # longer; the random init was getting stuck in a near-zero-action
     # local minimum.
     network_settings:
-      # Smaller net for stage-0 sandbox. 128×2 = ~33k params learns the
-      # "drive forward + brake before red" mapping fast. Bump back to
-      # 256×3 once warmup is solid.
+      # Smaller net for sandbox. 128×2 = ~33k params.
       hidden_units: 128
       num_layers: 2
       # Disabled: we pre-normalize observations in C#. Double-normalization
@@ -36,11 +34,6 @@ behaviors:
     time_horizon: 1000
     summary_freq: 5000
     threaded: true
-
-# Pin Stage 0 (Warmup) for editor sandbox runs — direct test of the new
-# observation/reward pipeline without curriculum advancement.
-environment_parameters:
-  stage_id: 0.0
 
 engine_settings:
   width: 1280

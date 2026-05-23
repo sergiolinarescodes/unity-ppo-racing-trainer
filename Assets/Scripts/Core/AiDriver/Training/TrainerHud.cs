@@ -114,12 +114,10 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
             }
 
             // Director state.
-            if (_director != null)
+            if (_director != null && !string.IsNullOrEmpty(_director.LastFailureReason))
             {
                 GUILayout.Space(6);
-                GUILayout.Label($"stage:    {_director.LastStageId}", _labelStyle);
-                if (!string.IsNullOrEmpty(_director.LastFailureReason))
-                    GUILayout.Label($"genfail:  {_director.LastFailureReason}", _labelStyle);
+                GUILayout.Label($"genfail:  {_director.LastFailureReason}", _labelStyle);
             }
 
             GUILayout.EndArea();

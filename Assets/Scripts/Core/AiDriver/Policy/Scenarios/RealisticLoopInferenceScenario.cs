@@ -84,11 +84,10 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy.Scenarios
             "Generates a realistic F1-style loop and instantiates the trained " +
             "AiDriverAgent_Test prefab (InferenceOnly + ONNX) at the lap start. " +
             "Use this to watch the policy drive on procedurally generated tracks " +
-            "without a Python trainer. Same (seed, stage) → identical track.",
+            "without a Python trainer. Same seed → identical track.",
             new[]
             {
                 new ScenarioParameter("seed", "Seed", typeof(int), 1234, 0, 1_000_000),
-                new ScenarioParameter("stageId", "Stage Id (1-5)", typeof(int), 3, 1, 5),
                 new ScenarioParameter("targetLengthCells", "Target Length (cells)", typeof(int), 60, 20, 200),
                 new ScenarioParameter("turnDensity", "Turn Density (0..1)", typeof(float), 0.4f, 0f, 1f),
                 new ScenarioParameter("beamWidth", "Beam Width", typeof(int), 16, 1, 64),
@@ -100,18 +99,13 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy.Scenarios
         protected override void ExecuteInternal(ScenarioParameterOverrides overrides)
         {
             int seed = ResolveParam<int>(overrides, "seed");
-            int stageId = ResolveParam<int>(overrides, "stageId");
             int targetLengthCells = ResolveParam<int>(overrides, "targetLengthCells");
             float turnDensity = ResolveParam<float>(overrides, "turnDensity");
             int beamWidth = ResolveParam<int>(overrides, "beamWidth");
             int attempts = ResolveParam<int>(overrides, "attempts");
             bool cameraFollow = ResolveParam<bool>(overrides, "cameraFollow");
 
-            if (!CurriculumStages.TryGet(stageId, out var stage))
-            {
-                Debug.LogWarning($"[RealLoopInfer] Unknown stageId={stageId}, using stage 1.");
-                stage = CurriculumStages.All[0];
-            }
+            var stage = CurriculumStages.Default;
 
             _eventBus = new ScenarioEventBus();
             _factory = new ScenarioGameObjectFactory();
@@ -256,8 +250,13 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy.Scenarios
             _carSim = new CarSimulationService(_eventBus, _trackQuery, _collision);
             _profileRegistry = new DriverProfileRegistry();
             var manifests = Versions.Manifest.VersionManifestLoader.LoadAll();
+            if (!manifests.TryGetValue("latest", out var latestManifest))
+            {
+                Debug.LogError("[RealisticLoopInferenceScenario] latest manifest missing under Assets/_Bootstrap/Configs/Versions/; using baked defaults.");
+                latestManifest = new Versions.Manifest.VersionManifest();
+            }
             var versionProfile = new Versions.Manifest.ManifestBackedVersionProfile(
-                manifests["latest"],
+                latestManifest,
                 () => NullRewardShaper.Instance);
             _policyService = new AiDriverPolicyService(_eventBus, _carSim, _trackQuery, _loopService, _profileRegistry, versionProfile, _collision);
         }
@@ -562,11 +561,10 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy.Scenarios
             "variant. The opening straight is a 6–10 cell long-anchor; the rest " +
             "of the body uses authored cards. No Bezier fallback. Pre-condition: " +
             "save at least one track via the Track Editor (F2) before running. " +
-            "Same (seed, stage) → same loop.",
+            "Same seed → same loop.",
             new[]
             {
                 new ScenarioParameter("seed", "Seed", typeof(int), 1234, 0, 1_000_000),
-                new ScenarioParameter("stageId", "Stage Id (1-5)", typeof(int), 3, 1, 5),
                 new ScenarioParameter("targetLengthCells", "Target Length (cells)", typeof(int), 60, 20, 200),
                 new ScenarioParameter("turnDensity", "Turn Density (0..1)", typeof(float), 0.4f, 0f, 1f),
                 new ScenarioParameter("beamWidth", "Beam Width", typeof(int), 16, 1, 64),
@@ -580,18 +578,13 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy.Scenarios
         protected override void ExecuteInternal(ScenarioParameterOverrides overrides)
         {
             int seed = ResolveParam<int>(overrides, "seed");
-            int stageId = ResolveParam<int>(overrides, "stageId");
             int targetLengthCells = ResolveParam<int>(overrides, "targetLengthCells");
             float turnDensity = ResolveParam<float>(overrides, "turnDensity");
             int beamWidth = ResolveParam<int>(overrides, "beamWidth");
             int attempts = ResolveParam<int>(overrides, "attempts");
             _anchorStraightCells = ResolveParam<int>(overrides, "anchorStraightCells");
 
-            if (!CurriculumStages.TryGet(stageId, out var stage))
-            {
-                Debug.LogWarning($"[AuthoredClosure] Unknown stageId={stageId}, using stage 1.");
-                stage = CurriculumStages.All[0];
-            }
+            var stage = CurriculumStages.Default;
 
             _eventBus = new ScenarioEventBus();
             _factory = new ScenarioGameObjectFactory();
@@ -806,7 +799,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy.Scenarios
     {
         public const string OutputFolderName = "stage_authored_closure";
         public const int DefaultBatchSize = 10;
-        public const int DefaultStageId = 3;
         public const int DefaultTargetLengthCells = 95;
         public const float DefaultTurnDensity = 0.4f;
         public const int DefaultBeamWidth = 16;
@@ -840,8 +832,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy.Scenarios
                 Debug.LogWarning($"[AuthoredClosureLib] backfill skipped — no {outDir} dir.");
                 return 0;
             }
-            if (!CurriculumStages.TryGet(DefaultStageId, out var stage))
-                stage = CurriculumStages.All[0];
+            var stage = CurriculumStages.Default;
 
             var files = Directory.GetFiles(outDir, "*.json");
             int updated = 0;
@@ -1095,8 +1086,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy.Scenarios
                 return 0;
             }
 
-            if (!CurriculumStages.TryGet(DefaultStageId, out var stage))
-                stage = CurriculumStages.All[0];
+            var stage = CurriculumStages.Default;
 
             int written = 0;
             int skipped = 0;
@@ -1495,8 +1485,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy.Scenarios
             var rec = new CircuitFile
             {
                 Id = $"authored_closure_{seed:0000}",
-                StageId = stage.Id,
-                StageName = stage.Name,
                 TotalLength = loop.TotalLength,
                 AnchorCount = anchors.Count,
                 AuthoredCardCount = ctx.AuthoredCount,
@@ -1619,8 +1607,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy.Scenarios
         public sealed class CircuitFile
         {
             public string Id;
-            public int StageId;
-            public string StageName;
             public float TotalLength;
             public int AnchorCount;
             public int AuthoredCardCount;

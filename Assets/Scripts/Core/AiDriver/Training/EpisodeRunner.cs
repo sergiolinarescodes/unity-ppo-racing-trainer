@@ -85,8 +85,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
             Subscribe<LoopOpenedEvent>(_ => _loopOpenAbortPending = true);
         }
 
-        // Live curriculum probe. Cached at race-start by the coordinator into
-        // its per-race latch so a stage flip never tears an in-flight race;
+        // Cached at race-start by the coordinator into its per-race latch;
         // EpisodeRunner inherits that latching by routing through the coord.
         private bool IsRaceScoped => _coord != null && _coord.IsRaceScoped;
 

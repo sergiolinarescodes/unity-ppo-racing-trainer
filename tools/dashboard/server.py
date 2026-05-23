@@ -2,10 +2,10 @@
 Circuit tier-list browser. Serves two pages:
 
 * http://localhost:8765/            — drag-and-drop tier list over the
-  numbered curriculum stages (circuits/stage_<N>/*.json). Persists ordering
+  generated circuits (circuits/*/*.json). Persists ordering
   to circuits/playlist.json for the trainer to consume.
 * http://localhost:8765/authored    — read-only viewer for the authored-only-
-  closure batch library (circuits/stage_authored_closure/*.json). Generated
+  closure batch library (circuits/authored_closure/*.json). Generated
   from the Unity menu "Build > Authored Closure Circuit Library (100)" via
   AuthoredOnlyClosureLoopScenario's pipeline. No tier-listing; this page is
   just a catalog so you can eyeball every output.
@@ -27,7 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 CIRCUITS_DIR = ROOT / "circuits"
 PLAYLIST_FILE = CIRCUITS_DIR / "playlist.json"
-AUTHORED_CLOSURE_DIR = CIRCUITS_DIR / "stage_authored_closure"
+AUTHORED_CLOSURE_DIR = CIRCUITS_DIR / "authored_closure"
 TELEMETRY_DIR = ROOT / "results" / "_telemetry"
 # Permanent per-circuit fastest-lap store. Survives every run, supervisor
 # restart, and results/ wipe — explicitly OUTSIDE TELEMETRY_DIR. Written by
@@ -68,7 +68,7 @@ _RACE_PINS_LOCK = threading.Lock()
 # Phase 2b: dashboard now edits the per-version JSON manifests under
 # Assets/_Bootstrap/Configs/Versions/<id>.json instead of the legacy
 # settings.json at the repo root. Each manifest is self-contained
-# (physics + tire + drafting + rewards + stages + observation layout
+# (physics + tire + drafting + rewards + observation layout
 # selection + ml_agents / runtime keys). Snapshots (anything other than
 # version_id == "latest") are immutable by default — POSTs return 409
 # unless ?force=1 is set, because mutating a frozen snapshot silently
@@ -151,7 +151,16 @@ def _list_manifests():
 def _has_frozen_diff(new_data, old_data):
     """Return field path of the first frozen-section mutation, or None.
     Also rejects mutations to top-level identity keys (schemaVersion,
-    versionId)."""
+    versionId) AND deletion of any frozen field (key present in old_data
+    but absent from new_data).
+
+    When ``old_data`` is empty / falsy, the target file doesn't yet
+    exist — first writes are unconstrained, so we return None to let the
+    save proceed. The snapshot-vs-force gate in ``_save_manifest`` is
+    the separate guard against accidentally creating a snapshot.
+    """
+    if not old_data:
+        return None
     for key in _MANIFEST_FROZEN_TOP_LEVEL:
         if new_data.get(key) != old_data.get(key):
             return key
@@ -159,11 +168,20 @@ def _has_frozen_diff(new_data, old_data):
         new_sec = new_data.get(section, {})
         old_sec = old_data.get(section, {})
         if not isinstance(new_sec, dict) or not isinstance(old_sec, dict):
+            # Section was replaced wholesale with a non-dict (e.g. a
+            # client sent observation as a string). Treat as mutation.
+            if type(new_sec) is not type(old_sec):
+                return section
             continue
         for k, v in new_sec.items():
             if k.startswith("_"):
                 continue
             if old_sec.get(k) != v:
+                return f"{section}.{k}"
+        for k in old_sec:
+            if k.startswith("_"):
+                continue
+            if k not in new_sec:
                 return f"{section}.{k}"
     return None
 
@@ -251,69 +269,184 @@ def _snapshot_manifest(new_version):
             return False, f"snapshot failed: {e}"
 
 
-SETTINGS_HTML = """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Trainer Settings</title>
-<style>
-  :root { color-scheme: dark; }
-  body { font-family: ui-monospace, Menlo, Consolas, monospace; background: #0c0d10; color: #d8dde2; margin: 0; padding: 2rem 1.5rem 5rem; max-width: 980px; margin-inline: auto; }
-  header { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
-  h1 { font-size: 1.25rem; font-weight: 600; margin: 0; }
-  nav a { color: #7aa6da; text-decoration: none; margin-right: 1rem; font-size: 0.85rem; }
-  nav a:hover { text-decoration: underline; }
-  .picker { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
-  .picker label { font-size: 0.78rem; color: #b3bcc6; letter-spacing: 0.05em; text-transform: uppercase; }
-  .picker select { background: #14171b; border: 1px solid #2c3138; color: #e6ebf0; padding: 0.3rem 0.5rem; border-radius: 3px; font-family: inherit; font-size: 0.85rem; }
-  .picker .snapshot-btn { background: #2c3138; color: #e6ebf0; border: 1px solid #3a4049; border-radius: 3px; padding: 0.3rem 0.7rem; font-size: 0.78rem; cursor: pointer; }
-  .note { background: #1a1d22; border-left: 3px solid #5a8ed1; padding: 0.6rem 0.9rem; margin: 0.5rem 0 1.25rem; font-size: 0.85rem; color: #b3bcc6; }
-  .frozen-note { border-left-color: #d18555; color: #d6b39a; }
-  .snapshot-banner { background: #2a2316; border-left: 3px solid #d18555; padding: 0.65rem 0.9rem; margin: 0.5rem 0 1.25rem; font-size: 0.85rem; color: #d6b39a; }
-  details { background: #14171b; border: 1px solid #23272d; border-radius: 4px; margin-bottom: 0.6rem; }
-  summary { cursor: pointer; padding: 0.65rem 0.9rem; font-weight: 600; user-select: none; }
-  summary:hover { background: #181b20; }
-  .section-body { padding: 0.25rem 0.9rem 0.9rem; display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem 1.2rem; }
-  .field { display: grid; grid-template-columns: minmax(0,1fr) 7.5rem; gap: 0.6rem; align-items: center; padding: 0.15rem 0; }
-  .field label { font-size: 0.82rem; color: #b3bcc6; overflow-wrap: anywhere; }
-  .field input { background: #0c0d10; border: 1px solid #2c3138; border-radius: 3px; color: #e6ebf0; padding: 0.3rem 0.45rem; font-family: inherit; font-size: 0.82rem; text-align: right; }
-  .field input:focus { outline: none; border-color: #5a8ed1; }
-  .field input:disabled { color: #6b7480; background: #16191d; }
-  .frozen-badge { display: inline-block; margin-left: 0.4rem; font-size: 0.7rem; padding: 0.05rem 0.4rem; background: #3a2818; color: #d6b39a; border-radius: 3px; vertical-align: 1px; }
-  .actions { position: fixed; bottom: 0; left: 0; right: 0; padding: 0.75rem 1.5rem; background: #0c0d10; border-top: 1px solid #23272d; display: flex; justify-content: flex-end; gap: 0.6rem; }
-  button { background: #2c3138; color: #e6ebf0; border: 1px solid #3a4049; border-radius: 3px; padding: 0.45rem 1rem; font-family: inherit; cursor: pointer; }
-  button.primary { background: #2f5a8f; border-color: #3a6ba3; }
-  button:hover { filter: brightness(1.15); }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  #toast { position: fixed; bottom: 4.5rem; right: 1.5rem; background: #1a1d22; border: 1px solid #2c3138; padding: 0.5rem 0.9rem; border-radius: 3px; font-size: 0.82rem; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+# Settings page parts. SETTINGS_HTML is assembled below chrome_header() so
+# the page reuses BASE_HEAD + BASE_STYLES + the shared nav-tabs (single
+# source of truth for palette, typography, and primitives).
+_SETTINGS_STYLES = r"""
+  body { padding-bottom: 88px; }
+  main.settings {
+    max-width: 1024px;
+    margin: 22px auto 0;
+    padding: 0 22px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .settings-picker { display: flex; align-items: center; gap: 10px; }
+  .settings-picker label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .note {
+    background: var(--card);
+    border: 1px solid var(--hair);
+    border-left: 3px solid var(--slate);
+    border-radius: var(--r);
+    padding: 12px 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; font-weight: 600;
+    color: var(--ink-2); line-height: 1.55;
+  }
+  .note code {
+    background: var(--paper-2);
+    border: 1px solid var(--hair);
+    border-radius: 4px;
+    padding: 1px 5px; font-weight: 700;
+  }
+  .frozen-note { border-left-color: var(--warn); }
+  .snapshot-banner {
+    background: #fbeed9;
+    border: 1px solid var(--warn);
+    border-left: 3px solid var(--warn);
+    border-radius: var(--r);
+    padding: 12px 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; font-weight: 700;
+    color: #6e4a13;
+  }
+  .snapshot-banner code {
+    background: var(--paper);
+    border: 1px solid var(--warn);
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  details.section {
+    background: var(--card);
+    border: 1px solid var(--hair);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  details.section > summary {
+    cursor: pointer;
+    padding: 12px 16px;
+    font-family: 'Inter Tight', sans-serif;
+    font-size: 13px; font-weight: 800;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink);
+    user-select: none;
+    display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid transparent;
+    list-style: none;
+  }
+  details.section[open] > summary { border-bottom-color: var(--hair); }
+  details.section > summary:hover { background: var(--paper-2); }
+  details.section > summary::-webkit-details-marker { display: none; }
+  details.section > summary::before {
+    content: '▸';
+    color: var(--ink-3); font-size: 11px;
+    transition: transform 0.18s var(--ease);
+    display: inline-block;
+  }
+  details.section[open] > summary::before { transform: rotate(90deg); }
+  .frozen-badge {
+    margin-left: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 0.10em; text-transform: uppercase;
+    color: #6e4a13;
+    background: #f4dcb4;
+    border: 1px solid var(--warn);
+    border-radius: 999px;
+    padding: 3px 9px;
+  }
+  .section-body {
+    padding: 12px 16px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 24px;
+  }
+  .section-body details.section { grid-column: 1 / -1; }
+  .section-body > .note { grid-column: 1 / -1; }
+  .field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 8rem;
+    gap: 12px;
+    align-items: center;
+    padding: 3px 0;
+  }
+  .field label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; font-weight: 600;
+    color: var(--ink-2);
+    overflow-wrap: anywhere;
+  }
+  .field input {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; font-weight: 700;
+    background: var(--paper);
+    border: 1px solid var(--hair);
+    border-radius: var(--r-sm);
+    color: var(--ink);
+    padding: 6px 9px;
+    text-align: right;
+  }
+  .field input[type="checkbox"] {
+    width: 16px; height: 16px;
+    text-align: left;
+    accent-color: var(--ink);
+    justify-self: end;
+  }
+  .field input:focus { outline: 2px solid var(--signal-soft); outline-offset: -1px; }
+  .field input:disabled { color: var(--ink-3); background: var(--paper-2); }
+  .footer-actions {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    padding: 12px 22px;
+    background: var(--paper);
+    border-top: 1px solid var(--hair);
+    display: flex; justify-content: flex-end; gap: 8px;
+    z-index: 20;
+    backdrop-filter: blur(6px);
+  }
+  #toast {
+    position: fixed;
+    bottom: 76px; right: 22px;
+    background: var(--ink); color: var(--paper);
+    padding: 8px 14px;
+    border-radius: var(--r-sm);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; font-weight: 700;
+    opacity: 0; transition: opacity 0.3s;
+    pointer-events: none;
+    z-index: 40;
+    box-shadow: var(--shadow-lg);
+  }
   #toast.show { opacity: 1; }
-  #toast.error { border-color: #c95d3c; color: #f0a48d; }
-</style>
-</head>
-<body>
-<header>
-  <h1>Trainer Settings</h1>
-  <nav>
-    <a href="/training">training</a>
-    <a href="/races">races</a>
-    <a href="/authored">authored circuits</a>
-  </nav>
-  <div class="picker">
-    <label for="version-select">version</label>
-    <select id="version-select"></select>
-    <button type="button" class="snapshot-btn" id="snapshot-btn" title="Copy latest.json to a new snapshot id">snapshot latest</button>
+  #toast.error { background: var(--bad); }
+"""
+
+_SETTINGS_ACTIONS = (
+    '<div class="settings-picker">'
+    '<label for="version-select">version</label>'
+    '<select id="version-select"></select>'
+    '<button type="button" class="btn" id="snapshot-btn" title="Copy latest.json to a new snapshot id">snapshot latest</button>'
+    '</div>'
+)
+
+_SETTINGS_BODY = r"""
+<main class="settings">
+  <div id="banner" class="note">
+    Edits write to <code>Assets/_Bootstrap/Configs/Versions/&lt;id&gt;.json</code>. <b>Changes apply on next trainer restart</b> — the running supervisor still uses its already-loaded values until you Ctrl+C and relaunch. A one-deep backup at <code>&lt;id&gt;.json.bak</code> is created on every Save.
   </div>
-</header>
-<div id="banner" class="note">
-  Edits write to <code>Assets/_Bootstrap/Configs/Versions/&lt;id&gt;.json</code>. <b>Changes apply on next trainer restart</b> — the running supervisor still uses its already-loaded values until you Ctrl+C and relaunch. A one-deep backup at <code>&lt;id&gt;.json.bak</code> is created on every Save.
-</div>
-<div id="snapshot-banner" class="snapshot-banner" hidden>
-  Viewing a frozen snapshot. Edits are blocked unless you accept the warning to overwrite — snapshots are paired with a specific ONNX, and mutating them silently desyncs the pair. Switch to <code>latest</code> to edit.
-</div>
-<form id="settings-form"></form>
-<div class="actions">
-  <button type="button" id="reset-btn">Reset to backup</button>
-  <button type="button" id="save-btn" class="primary">Save</button>
+  <div id="snapshot-banner" class="snapshot-banner" hidden>
+    Viewing a frozen snapshot. Edits are blocked unless you accept the warning to overwrite — snapshots are paired with a specific ONNX, and mutating them silently desyncs the pair. Switch to <code>latest</code> to edit.
+  </div>
+  <form id="settings-form"></form>
+</main>
+<div class="footer-actions">
+  <button type="button" class="btn" id="reset-btn">Reset to backup</button>
+  <button type="button" class="btn primary" id="save-btn">Save</button>
 </div>
 <div id="toast"></div>
 <script>
@@ -371,8 +504,8 @@ function renderForm(data) {
   for (const [section, body] of Object.entries(data)) {
     if (section.startsWith("_")) continue;
     if (FROZEN_TOP_LEVEL.has(section)) {
-      // Top-level identity (schemaVersion, versionId) — show as read-only metadata, not a section.
       const det = document.createElement("details");
+      det.className = "section";
       det.open = false;
       const sum = document.createElement("summary");
       sum.textContent = section;
@@ -388,12 +521,42 @@ function renderForm(data) {
       form.appendChild(det);
       continue;
     }
-    if (typeof body !== "object" || body === null || Array.isArray(body)) {
-      // Top-level scalar (e.g. displayName) — render as a single field.
-      const wrap = document.createElement("div");
-      wrap.style.marginBottom = "0.6rem";
-      wrap.appendChild(renderField(section, body, false));
-      form.appendChild(wrap);
+    if (Array.isArray(body)) {
+      // Top-level arrays (rewardChannels) — render disabled with
+      // a comma-joined preview. Editing structured arrays inline corrupts
+      // them on Save; edit JSON by hand or use the snapshot tool instead.
+      const det = document.createElement("details");
+      det.className = "section";
+      det.open = true;
+      const sum = document.createElement("summary");
+      sum.textContent = section;
+      const b = document.createElement("span");
+      b.className = "frozen-badge";
+      b.textContent = "array — edit JSON";
+      sum.appendChild(b);
+      det.appendChild(sum);
+      const inner = document.createElement("div");
+      inner.className = "section-body";
+      const preview = body.map(v => typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)).join(", ");
+      inner.appendChild(renderField(section, preview, true, "array — edit in JSON, not the dashboard"));
+      det.appendChild(inner);
+      form.appendChild(det);
+      continue;
+    }
+    if (typeof body !== "object" || body === null) {
+      // Top-level scalar (e.g. displayName) — wrap in a section card so it
+      // visually matches the rest of the form.
+      const det = document.createElement("details");
+      det.className = "section";
+      det.open = true;
+      const sum = document.createElement("summary");
+      sum.textContent = section;
+      det.appendChild(sum);
+      const inner = document.createElement("div");
+      inner.className = "section-body";
+      inner.appendChild(renderField(section, body, false));
+      det.appendChild(inner);
+      form.appendChild(det);
       continue;
     }
     form.appendChild(renderSection(section, body, FROZEN_SECTIONS.has(section)));
@@ -402,6 +565,7 @@ function renderForm(data) {
 
 function renderSection(name, obj, frozen) {
   const det = document.createElement("details");
+  det.className = "section";
   det.open = true;
   const sum = document.createElement("summary");
   sum.textContent = name;
@@ -419,7 +583,6 @@ function renderSection(name, obj, frozen) {
       if (typeof value === "string") {
         const n = document.createElement("div");
         n.className = "note" + (frozen ? " frozen-note" : "");
-        n.style.gridColumn = "1 / -1";
         n.textContent = value;
         body.appendChild(n);
       }
@@ -427,7 +590,6 @@ function renderSection(name, obj, frozen) {
     }
     if (typeof value === "object" && value !== null && !Array.isArray(value)) {
       const sub = renderSection(`${name}.${key}`, value, frozen);
-      sub.style.gridColumn = "1 / -1";
       body.appendChild(sub);
       continue;
     }
@@ -451,7 +613,12 @@ function renderField(path, value, disabled, hint) {
   input.dataset.path = path;
   input.value = value;
   input.disabled = !!disabled;
-  if (typeof value === "number") input.type = "number";
+  if (typeof value === "number") {
+    input.type = "number";
+    // step="any" lets the browser accept arbitrary decimals; default step=1
+    // clamps the up/down arrows to integers and rejects float-only edits.
+    input.step = "any";
+  }
   if (typeof value === "boolean") { input.type = "checkbox"; input.checked = value; }
   wrap.appendChild(label);
   wrap.appendChild(input);
@@ -568,8 +735,6 @@ document.getElementById("snapshot-btn").addEventListener("click", async () => {
   await loadManifest();
 })();
 </script>
-</body>
-</html>
 """
 
 
@@ -743,16 +908,12 @@ def _compute_sector_meta(anchors, lap_start_override=None, sector_anchors_overri
 
 
 def load_circuits():
-    """Walk circuits/stage_*/*.json and return one record per file."""
+    """Walk circuits/*/*.json and return one record per file."""
     out = []
     if not CIRCUITS_DIR.exists():
         return out
-    for stage_dir in sorted(CIRCUITS_DIR.glob("stage_*")):
-        try:
-            stage_id = int(stage_dir.name.split("_")[1])
-        except (IndexError, ValueError):
-            continue
-        for jf in sorted(stage_dir.glob("*.json")):
+    for sub_dir in sorted(p for p in CIRCUITS_DIR.iterdir() if p.is_dir()):
+        for jf in sorted(sub_dir.glob("*.json")):
             try:
                 with open(jf, "r", encoding="utf-8") as f:
                     rec = json.load(f)
@@ -762,8 +923,8 @@ def load_circuits():
             anchors_raw = rec.get("Anchors") or []
             walls = rec.get("Walls") or []      # [[ax,ay,bx,by], ...] world XZ
             kerbs = rec.get("Kerbs") or []      # [[p0x,p0y,...,p3x,p3y], ...] world XZ
-            # Normalise anchor shape to [x,y] pairs (legacy stage_<N> JSON
-            # already uses pairs; authored uses {X,Z} dicts).
+            # Normalise anchor shape to [x,y] pairs (legacy JSON uses pairs;
+            # authored uses {X,Z} dicts).
             anchors = []
             for a in anchors_raw:
                 if isinstance(a, (list, tuple)) and len(a) >= 2:
@@ -802,8 +963,6 @@ def load_circuits():
                 circuit_id=circuit_id_for_warn)
             out.append({
                 "id": rec.get("Id") or jf.stem,
-                "stageId": rec.get("StageId", stage_id),
-                "stageName": rec.get("StageName", f"stage_{stage_id}"),
                 "totalLength": rec.get("TotalLength", total_arc),
                 "pieceCount": len(placements),
                 "anchorCount": rec.get("AnchorCount", len(anchors)),
@@ -899,7 +1058,7 @@ def _expand_bbox_with_points(bbox, *point_streams, pad_frac=0.05):
     }
 
 
-def _record_from_json(jf, default_stage_id, default_stage_name):
+def _record_from_json(jf):
     """Shared record builder used by both the tier-list and the authored
     viewer. Returns None if the file is unreadable or has no placements."""
     try:
@@ -912,7 +1071,7 @@ def _record_from_json(jf, default_stage_id, default_stage_name):
     walls = rec.get("Walls") or []
     kerbs = rec.get("Kerbs") or []
     # Anchors come in two shapes:
-    #   * legacy stage_<N> circuits — list of [x, y] pairs
+    #   * legacy circuits — list of [x, y] pairs
     #   * authored-closure circuits — list of {X, Z} dicts (Unity JsonUtility)
     # Normalise to [x, y] pairs so the SVG renderer has one path.
     anchors = []
@@ -981,12 +1140,10 @@ def _record_from_json(jf, default_stage_id, default_stage_name):
         circuit_id=circuit_id_for_warn)
     return {
         "id": rec.get("Id") or jf.stem,
-        "stageId": rec.get("StageId", default_stage_id),
-        "stageName": rec.get("StageName", default_stage_name),
         "totalLength": rec.get("TotalLength", total_arc),
         "pieceCount": len(placements),
         "anchorCount": rec.get("AnchorCount", len(anchors)),
-        # Authored-closure extras (default 0 for legacy stage_<N> records).
+        # Authored-closure extras (default 0 for legacy records).
         "seed": rec.get("Seed", 0),
         "authoredCardCount": rec.get("AuthoredCardCount", 0),
         "closureCardCount": rec.get("ClosureCardCount", 0),
@@ -1004,15 +1161,13 @@ def _record_from_json(jf, default_stage_id, default_stage_name):
 
 
 def load_authored_closure_circuits():
-    """Walk circuits/stage_authored_closure/*.json and return one record
-    per file in seed order. Used by the /authored viewer page only — these
-    circuits are deliberately excluded from the numbered-stage tier list."""
+    """Walk circuits/authored_closure/*.json and return one record
+    per file in seed order. Used by the /authored viewer page only."""
     out = []
     if not AUTHORED_CLOSURE_DIR.exists():
         return out
     for jf in sorted(AUTHORED_CLOSURE_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime):
-        rec = _record_from_json(jf, default_stage_id=-1,
-                                default_stage_name="authored_closure")
+        rec = _record_from_json(jf)
         if rec is not None:
             out.append(rec)
     return out
@@ -1371,10 +1526,10 @@ BASE_STYLES = r"""
 
 def _nav_tabs(active):
     items = (
-        ("tier", "/", "tier list"),
-        ("authored", "/authored", "authored"),
-        ("training", "/training", "training"),
+        ("training", "/training", "dashboard"),
+        ("authored", "/authored", "authored circuits"),
         ("races", "/races", "races"),
+        ("settings", "/settings", "settings"),
     )
     out = ['<nav class="nav-tabs">']
     for key, href, label in items:
@@ -1386,7 +1541,7 @@ def _nav_tabs(active):
 
 def chrome_header(active, subtitle, meta_html="", actions_html=""):
     """Sticky chalk-paper header shared across every dashboard page. `active`
-    is the nav-tabs key in {'tier','authored','training','races'}; meta_html
+    is the nav-tabs key in {'training','authored','races','settings'}; meta_html
     is an optional inline strip that sits between tabs and actions (race
     detail uses it for the race meta dl). actions_html drops into the right-
     side .actions slot."""
@@ -1399,6 +1554,19 @@ def chrome_header(active, subtitle, meta_html="", actions_html=""):
         + f'<div class="actions">{actions_html}</div>'
         + "</header>"
     )
+
+
+SETTINGS_HTML = (
+    '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+    '<title>RACING · trainer settings</title>'
+    '<meta name="viewport" content="width=device-width, initial-scale=1">'
+    + BASE_HEAD
+    + '<style>' + BASE_STYLES + _SETTINGS_STYLES + '</style>'
+    + '</head><body>'
+    + chrome_header('settings', 'trainer settings', actions_html=_SETTINGS_ACTIONS)
+    + _SETTINGS_BODY
+    + '</body></html>'
+)
 
 
 # Shared SVG renderer — single source of truth for both pages so the line
@@ -1617,12 +1785,12 @@ _AUTHORED_BODY = r"""
   </div>
   <div class="auth-grid" id="grid"></div>
   <div class="empty" id="empty" style="display:none">
-    no circuits in <code>circuits/stage_authored_closure/</code>.<br>
+    no circuits in <code>circuits/authored_closure/</code>.<br>
     run the unity menu <b>build → authored closure circuit library (100)</b> to populate.
   </div>
 </main>
 <footer class="chalk-foot">
-  source: <code style="background:var(--paper-2);padding:1px 5px;border-radius:3px;border:1px solid var(--hair);color:var(--ink-2)">circuits/stage_authored_closure/</code>
+  source: <code style="background:var(--paper-2);padding:1px 5px;border-radius:3px;border:1px solid var(--hair);color:var(--ink-2)">circuits/authored_closure/</code>
   &nbsp;·&nbsp;<span class="sw" style="background:#1f1c17"></span>authored body
   &nbsp;·&nbsp;<span class="sw" style="background:#b88840"></span>closure transition (generator-bridged, no walls)
   &nbsp;·&nbsp;<span class="sw" style="background:#c84a2c;opacity:0.6"></span>kerb
@@ -1638,7 +1806,7 @@ function cardEl(c) {
   const closure = c.closureCardCount || 0;
   el.innerHTML = svgFor(c, 180, 138, 0.06) +
     `<div class="id">${c.id}</div>` +
-    `<div class="card-meta"><b>${c.totalLength.toFixed(1)}m</b> · ${c.pieceCount} pieces · stage ${c.stageId}</div>` +
+    `<div class="card-meta"><b>${c.totalLength.toFixed(1)}m</b> · ${c.pieceCount} pieces</div>` +
     `<div class="pills">` +
       (c.seed ? `<span class="pill-mini">seed ${c.seed}</span>` : '') +
       (auth ? `<span class="pill-mini">authored ×${auth}</span>` : '') +
@@ -1791,9 +1959,8 @@ function cardEl(c) {
   el.className = 'tcard';
   el.draggable = true;
   el.dataset.id = c.id;
-  el.dataset.stage = c.stageId;
   el.innerHTML = svgFor(c, 124, 94, 0.05) +
-    `<div class="tmeta"><span class="id">${c.id}</span> · stage ${c.stageId}<br>` +
+    `<div class="tmeta"><span class="id">${c.id}</span><br>` +
     `<span class="len">${c.totalLength.toFixed(1)}m · ${c.pieceCount}p</span></div>`;
   el.addEventListener('dragstart', e => {
     e.dataTransfer.setData('text/plain', c.id);
@@ -1865,7 +2032,7 @@ async function load() {
   document.querySelectorAll('.tcard').forEach(c => c.remove());
   applyPlaylist(data.circuits, data.playlist || {});
   document.getElementById('stat').textContent =
-    `${data.circuits.length} circuits · ${new Set(data.circuits.map(c=>c.stageId)).size} stages`;
+    `${data.circuits.length} circuits`;
 }
 
 async function save() {
@@ -2586,8 +2753,7 @@ def heatmap_for_circuit(events, circuit, bins=48):
     overlay = None
     if CIRCUITS_DIR.exists():
         for jf in CIRCUITS_DIR.glob("**/" + circuit + ".json"):
-            rec = _record_from_json(jf, default_stage_id=-1,
-                                    default_stage_name="?")
+            rec = _record_from_json(jf)
             if rec:
                 bbox = {
                     "minX": rec["minX"], "maxX": rec["maxX"],
@@ -3673,7 +3839,6 @@ def load_race_summaries(max_n=50):
             "captured_at_utc": rec.get("captured_at_utc", ""),
             "env_pid": rec.get("env_pid", 0),
             "episode_index": rec.get("episode_index", 0),
-            "stage_id": rec.get("stage_id", 0),
             "circuit_id": circuit.get("id", ""),
             "duration_s": rec.get("duration_s", 0.0),
             "driver_count": len(drivers),
@@ -3704,7 +3869,7 @@ def _load_circuit_overlay(circuit_id):
     if not circuit_id or not CIRCUITS_DIR.exists():
         return None
     for jf in CIRCUITS_DIR.glob("**/" + circuit_id + ".json"):
-        rec = _record_from_json(jf, default_stage_id=-1, default_stage_name="?")
+        rec = _record_from_json(jf)
         if rec is not None:
             return rec
     return None
@@ -3917,7 +4082,7 @@ async function load() {
     return;
   }
   let html = '<table class="races-table"><thead><tr>'
-    + '<th>captured</th><th>episode</th><th>stage</th><th>circuit</th>'
+    + '<th>captured</th><th>episode</th><th>circuit</th>'
     + '<th>drivers</th><th>outcome</th><th>duration</th><th>reasons</th><th>env pid</th>'
     + '</tr></thead><tbody>';
   for (const r of races) {
@@ -3938,7 +4103,6 @@ async function load() {
     html += `<tr onclick="location.href='/races/${encodeURIComponent(r.race_id)}'">`
       + `<td class="col-ts">${fmt(r.captured_at_utc || '')}</td>`
       + `<td class="col-num">${r.episode_index}</td>`
-      + `<td class="col-num">${r.stage_id}</td>`
       + `<td class="col-circuit">${r.circuit_id || '?'}</td>`
       + `<td class="col-num">${r.driver_count}</td>`
       + `<td class="col-outcome">${outcomeCell}</td>`
@@ -4429,7 +4593,7 @@ function renderHeaderMeta() {
   m.innerHTML = `
     <dl><dt>race</dt><dd><b>${RACE.race_id || '?'}</b></dd></dl>
     <dl><dt>circuit</dt><dd>${(RACE.circuit||{}).id || '?'}</dd></dl>
-    <dl><dt>episode</dt><dd>${RACE.episode_index || 0} · stage ${RACE.stage_id || 0}</dd></dl>
+    <dl><dt>episode</dt><dd>${RACE.episode_index || 0}</dd></dl>
     <dl><dt>duration</dt><dd>${fmt(RACE.duration_s,2)}s · ${HZ} Hz</dd></dl>
     <dl><dt>captured</dt><dd>${captured || '—'}</dd></dl>
     <dl><dt>status</dt><dd><span class="pill">env pid ${RACE.env_pid || 0}</span></dd></dl>`;
@@ -4601,7 +4765,7 @@ function renderMap() {
       // start gate marker at lapStartIdx. -1 means the JSON predates the
       // canonical LapStartAnchorIndex field — skip the START label entirely
       // so it never lies. Re-run Scenario Browser → Circuit Barrier Re-Export
-      // to bake the field into every stage_*/ JSON.
+      // to bake the field into every circuits/*/ JSON.
       const li = (OVERLAY.lapStartIdx != null) ? OVERLAY.lapStartIdx : -1;
       if (li >= 0 && li < a.length) {
         const sa = a[li];

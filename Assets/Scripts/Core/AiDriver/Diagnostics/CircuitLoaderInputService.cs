@@ -103,7 +103,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Diagnostics
                     Debug.LogWarning($"[CircuitLoader] piece {i} ({p.ShapeId}@{p.X},{p.Y} facing={p.Facing}) failed: {r.Reason}");
                 }
             }
-            Debug.Log($"[CircuitLoader] loaded {file.Id} stage={file.StageId} placed={placed} failed={failed} of {file.Placements.Count}");
+            Debug.Log($"[CircuitLoader] loaded {file.Id} placed={placed} failed={failed} of {file.Placements.Count}");
             if (placed > 0) FrameCircuit(minX, maxX, minY, maxY);
         }
 
@@ -145,7 +145,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Diagnostics
         private sealed class CircuitFileDto
         {
             public string Id;
-            public int StageId;
             public List<PlacementDto> Placements;
         }
 

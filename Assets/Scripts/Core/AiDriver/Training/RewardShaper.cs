@@ -7,7 +7,6 @@ using UnityPpoRacingTrainer.Core.AiDriver.Physics.Fuel;
 using UnityPpoRacingTrainer.Core.AiDriver.Physics.Tires;
 using UnityPpoRacingTrainer.Core.AiDriver.Policy;
 using UnityPpoRacingTrainer.Core.AiDriver.Race;
-using UnityPpoRacingTrainer.Core.AiDriver.Training.Stages;
 using UnityPpoRacingTrainer.Core.Track.Loop;
 using Unidad.Core.EventBus;
 using Unidad.Core.Systems;
@@ -222,7 +221,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
         private float _currentCircuitBestLapSec;
         private string _currentCircuitId = string.Empty;
 
-        private readonly IActiveStageProfile _active;
         private readonly ITirePhysicsService _tires;
         private readonly IFuelService _fuel;
         private readonly IDraftService _draft;
@@ -237,7 +235,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
         public RewardShaper(
             IEventBus eventBus,
             ITrainingSettingsService settings,
-            IActiveStageProfile active,
             ITirePhysicsService tires,
             IFuelService fuel,
             IDraftService draft,
@@ -323,7 +320,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
             _fuelOutPenalty = r.DraftAndConsumables.FuelOutPenalty;
             _punctureOffTrackPenalty = r.DraftAndConsumables.PunctureOffTrackPenalty;
 
-            _active = active;
             _tires = tires;
             _fuel = fuel;
             _draft = draft;
@@ -387,19 +383,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
 
         internal DriverPersonality SamplePersonalityForCurrentEpisode()
         {
-            if (_active.Current.Personality == PersonalitySamplingMode.Uniform)
-            {
-                return new DriverPersonality(
-                    TirePreservation: UnityEngine.Random.value,
-                    FuelEconomy: UnityEngine.Random.value,
-                    PassingAggression: Mathf.Lerp(_minPassingAggression, 1f, UnityEngine.Random.value),
-                    DefendingResolve: UnityEngine.Random.value,
-                    RiskTolerance: UnityEngine.Random.value,
-                    PeakPaceBias: UnityEngine.Random.value,
-                    Reserved0: 0f,
-                    Reserved1: 0f);
-            }
-
+            // Pick one of six curated archetypes + ±noise.
             DriverPersonality archetype = (UnityEngine.Random.Range(0, 6)) switch
             {
                 0 => DriverPersonality.TirePreserver,
@@ -423,7 +407,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
 
         internal float SampleStartingLiters()
         {
-            if (_active.Current.Fuel == FuelSamplingMode.Abundant) return AbundantStartingLiters;
+            // Sample a fuel-margin lap multiplier so policy must learn lift-and-coast.
             float lapsMargin = UnityEngine.Random.Range(
                 ConstrainedFuelLapMultiplierMin, ConstrainedFuelLapMultiplierMax);
             return Mathf.Max(ConstrainedFuelMinLiters,
@@ -447,13 +431,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
             var profile = PersonalityOf(carId);
             float reward = 0f;
 
-            bool draftOn = _active == null || _active.Has(StageFeature.DraftBonus);
-            bool tireOn  = _active == null || _active.Has(StageFeature.TireOverstressPenalty);
-            bool fuelOn  = _active == null || _active.Has(StageFeature.FuelMarginPenalty);
-            bool holdOn  = _active == null || _active.Has(StageFeature.HoldPositionBonus);
-            bool cleanOn = _active == null || _active.Has(StageFeature.CleanDrivingBonus);
-
-            if (draftOn && _draft != null)
+            if (_draft != null)
             {
                 var d = _draft.Get(carId);
                 reward += _draftBonusPerSec * d.Strength
@@ -518,7 +496,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
 
             bool inThreat = UpdateThreatState(carId, ref s, dt);
 
-            if (tireOn && _tires != null)
+            if (_tires != null)
             {
                 var t = _tires.Get(carId);
                 if (t.Worst > TireOverstressWearThreshold)
@@ -537,7 +515,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
                 }
             }
 
-            if (fuelOn && _fuel != null)
+            if (_fuel != null)
             {
                 var f = _fuel.Get(carId);
                 if (f.RollingLapsRemaining < 1f && !f.Depleted)
@@ -548,13 +526,12 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
                 }
             }
 
-            if (holdOn)
-                reward += _holdPositionBonusPerSec * profile.DefendingResolve * dt;
+            reward += _holdPositionBonusPerSec * profile.DefendingResolve * dt;
 
             s.CleanCooldownSec = Mathf.Max(0f, s.CleanCooldownSec - dt);
             s.RearEndCooldownSec = Mathf.Max(0f, s.RearEndCooldownSec - dt);
             s.OvertakeGraceSec = Mathf.Max(0f, s.OvertakeGraceSec - dt);
-            if (cleanOn && s.CleanCooldownSec <= 0f)
+            if (s.CleanCooldownSec <= 0f)
             {
                 float cleanScale = CleanScaleFloor
                                    + CleanScaleAggressionGain * (1f - profile.PassingAggression);
@@ -600,11 +577,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
 
         private void OnOvertake(OvertakeEvent e)
         {
-            if (_active != null &&
-                !_active.Has(StageFeature.OvertakeReward) &&
-                !_active.Has(StageFeature.GotPassedPenalty))
-                return;
-
             bool passerGraced = _accum.TryGetValue(e.Passer, out var sPCheck)
                                 && sPCheck.EpisodeElapsed < _gridGraceSeconds;
             bool passedGraced = _accum.TryGetValue(e.Passed, out var sVCheck)
@@ -705,11 +677,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
                 _accum[e.CarId] = sClean;
             }
 
-            bool posBonusOn = _active == null || _active.Has(StageFeature.MicroSectorPositionBonus);
-            bool holdOn     = _active == null || _active.Has(StageFeature.OvertakeReward);
-            if (!posBonusOn && !holdOn) return;
-
-            if (posBonusOn)
             {
                 float posWeight = PositionWeight(_race?.GetPosition(e.CarId) ?? 0);
                 if (posWeight > 0f && _accum.TryGetValue(e.CarId, out var sCar))
@@ -718,8 +685,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
                     _accum[e.CarId] = sCar;
                 }
             }
-
-            if (!holdOn) return;
 
             if (!_pending.TryGetValue(e.CarId, out var list) || list.Count == 0) return;
 
@@ -822,8 +787,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
                 _accum[e.Id] = sBest;
             }
 
-            if (_active != null && !_active.Has(StageFeature.LapPositionBonus)) return;
-
             float posWeight = PositionWeight(_race?.GetPosition(e.Id) ?? 0);
             if (posWeight > 0f && _accum.TryGetValue(e.Id, out var s))
             {
@@ -877,8 +840,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
 
         private void OnCarHit(CarHitCarEvent e)
         {
-            if (_active != null && !_active.Has(StageFeature.CarHitCarPenalty)) return;
-
             int posA = _race?.GetPosition(e.A) ?? 0;
             int posB = _race?.GetPosition(e.B) ?? 0;
             bool haveAccA = _accum.TryGetValue(e.A, out var stA);
@@ -1017,8 +978,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
 
         private void OnFuelOut(FuelDepletedEvent e)
         {
-            if (_active != null && !_active.Has(StageFeature.FuelOutTerminal)) return;
-
             if (!_accum.TryGetValue(e.Id, out var s)) s = new AccumState();
             var prof = PersonalityOf(e.Id);
             s.PendingReward -= _fuelOutPenalty * (0.5f + prof.FuelEconomy);
@@ -1041,8 +1000,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
                 sClean.SectorCleanCurrent = false;
                 _accum[e.Id] = sClean;
             }
-
-            if (_active != null && !_active.Has(StageFeature.PunctureOffTrackTerminal)) return;
 
             if (!_accum.TryGetValue(e.Id, out var s)) return;
             if (s.PunctureCount >= 2)

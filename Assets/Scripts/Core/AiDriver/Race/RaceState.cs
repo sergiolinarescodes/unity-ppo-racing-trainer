@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using UnityPpoRacingTrainer.Core.AiDriver.Physics;
 using UnityPpoRacingTrainer.Core.AiDriver.Training;
-using UnityPpoRacingTrainer.Core.AiDriver.Training.Stages;
 using UnityPpoRacingTrainer.Core.Terrain.Scenarios;
 using UnityPpoRacingTrainer.Core.Track.Loop;
 using Reflex.Core;
@@ -41,18 +40,10 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Race
         private readonly Dictionary<int, CarId> _previousByPosition = new();
         private readonly List<CarId> _orderedScratch = new();
         private readonly List<CarId> _ordered = new();
-        private readonly IActiveStageProfile _active;
-        private readonly IStageIdProvider _stage;
         private int _tickEventCounter;
 
-        public RaceStateService(
-            IEventBus eventBus,
-            IActiveStageProfile active = null,
-            IStageIdProvider stage = null) : base(eventBus)
+        public RaceStateService(IEventBus eventBus) : base(eventBus)
         {
-            _active = active;
-            _stage = stage;
-
             Subscribe<CarPhysicsTickedEvent>(OnTick);
             Subscribe<CarLapCompletedEvent>(OnLap);
             Subscribe<CarDespawnedEvent>(e =>
@@ -79,22 +70,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Race
                 _ordered.Clear();
                 _tickEventCounter = 0;
             });
-        }
-
-        /// <summary>
-        /// Suppress <c>OvertakeEvent</c> publishing entirely when the active
-        /// stage declares zero opponents (warmup / solo). Closes the historical
-        /// stage-0 leak at the source: with 200 agents sharing one RaceState,
-        /// position swaps fire constantly even though "opponents off" per
-        /// supervisor config; without this gate, RewardShaper subscribers
-        /// process hundreds of phantom passes per episode. Inference scenes
-        /// (no stage_id resolver) always publish — observers expect overtakes.
-        /// </summary>
-        private bool ShouldPublishOvertakes()
-        {
-            if (_stage == null || _stage.Resolver == null) return true;
-            if (_active != null) return _active.Current.ExpectedOpponentCount > 0;
-            return true;
         }
 
         public IReadOnlyList<CarId> OrderedCars => _ordered;
@@ -145,24 +120,17 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Race
             });
 
             // Detect swaps via O(1) reverse-map lookup instead of an inner
-            // scan over _previousPosition. Publishing gated at the source:
-            // when the stage declares zero opponents, no OvertakeEvent fires
-            // and downstream subscribers (RewardShaper.OnOvertake, telemetry,
-            // bookmaker UI) never see phantom passes.
-            bool publishOvertakes = ShouldPublishOvertakes();
-            if (publishOvertakes)
+            // scan over _previousPosition.
+            for (int i = 0; i < _orderedScratch.Count; i++)
             {
-                for (int i = 0; i < _orderedScratch.Count; i++)
+                var id = _orderedScratch[i];
+                int newPos = i + 1;
+                int oldPos = _previousPosition.TryGetValue(id, out var p) ? p : newPos;
+                if (newPos < oldPos
+                    && _previousByPosition.TryGetValue(newPos, out var passed)
+                    && passed.Value != id.Value)
                 {
-                    var id = _orderedScratch[i];
-                    int newPos = i + 1;
-                    int oldPos = _previousPosition.TryGetValue(id, out var p) ? p : newPos;
-                    if (newPos < oldPos
-                        && _previousByPosition.TryGetValue(newPos, out var passed)
-                        && passed.Value != id.Value)
-                    {
-                        Publish(new OvertakeEvent(id, passed, newPos));
-                    }
+                    Publish(new OvertakeEvent(id, passed, newPos));
                 }
             }
 
@@ -184,7 +152,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Race
     }
 
     // ========================================================================
-    // RaceCoordinator — race-scoped episode lifecycle (stage 5+).
+    // RaceCoordinator — race-scoped episode lifecycle.
     //
     // Co-located in this existing file rather than its own RaceCoordinator.cs
     // so the new types land in the already-tracked .csproj without waiting
@@ -195,15 +163,14 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Race
     /// <summary>
     /// Per-environment race coordinator. Owns the lifecycle of a single "race"
     /// — one episode for every registered driver that runs from spawn through
-    /// a fixed lap target (default 3) or full elimination. Activates only at
-    /// curriculum stage_id &gt;= 5 (the user-requested "race showcase" mode);
-    /// stages 1–4 keep legacy per-car episode terminals untouched.
+    /// a fixed lap target (default 3) or full elimination. The race-scoped
+    /// flow is the default; the supervisor can override with the
+    /// RACING_RACE_SCOPED env var ("0" = per-car terminals, legacy mode).
     ///
     /// Activation is decided lazily on every <see cref="IsRaceScoped"/> read so
-    /// curriculum stage flips take effect at the next coordinator decision
-    /// without restarting the trainer. Within a single race the value is
-    /// latched (cached at <c>BeginNewRace</c>) so a mid-race stage change
-    /// never tears the in-flight race in half.
+    /// env-var flips take effect at the next coordinator decision without
+    /// restarting the trainer. Within a single race the value is latched
+    /// (cached at <c>BeginNewRace</c>).
     /// </summary>
     public interface IRaceCoordinator
     {
@@ -293,11 +260,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Race
 
     internal sealed class RaceCoordinator : SystemServiceBase, IRaceCoordinator, ITickable
     {
-        // Minimum stage at which race-scoped episodes activate. Stages
-        // 1–4 keep the legacy per-car episode flow; stage 5+ runs full
-        // 3-lap races. Cached at race-start so curriculum flips never
-        // tear an in-flight race.
-        private const int RaceScopedMinStage = 5;
         private const int DefaultLapTarget = 3;
         // Hard ceiling on per-race wall clock (18000 sim ticks ≈ 6 minutes
         // at 50 Hz). Sized to accommodate 3-lap races on long procedural
@@ -329,7 +291,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Race
         private static readonly int[] PostFinishBudgetSecondsByFinisherIndex =
             new[] { 60, 50, 40, 30 };
 
-        private readonly IStageIdProvider _stage;
         private readonly Func<float> _envOverride;
         private readonly Func<float> _lapTargetOverride;
         private readonly ITimeProvider _time;
@@ -356,41 +317,28 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Race
         public string CurrentRaceId => _currentRaceId;
         public RaceLifecycleState State => _state;
 
-        // IsRaceScoped is the live curriculum/env probe; the per-race
-        // behaviour caches this value at BeginNewRace into _latchedScopedForRace
-        // so the in-flight race never tears.
-        //
-        // COUPLING WARNING — this gate piggybacks on stage_id, but stage_id is
-        // also the feature-mask selector. A run that wants the full feature
-        // mask (e.g. cold-start with stage_id=5 for fuel + tire wear +
-        // archetypes + front-cone rays) silently flips race-scoped mode on
-        // and therefore suppresses per-car terminals (Wreck / OffTrack /
-        // WallCap / StepCap). A random cold-start policy then never resolves
-        // the 3-lap race and PPO gradient starves. The escape hatch is the
-        // RACING_RACE_SCOPED env var (see RaceCoordinatorSystemInstaller.
-        // ReadRaceScopedEnv below) — set to "0" to decouple: feature mask
-        // stays at stage_id=5 while episode boundaries fall back to per-car
-        // terminals. The supervisor exports this via -RaceScoped 0.
+        // IsRaceScoped is the live env probe; the per-race behaviour caches
+        // this value at BeginNewRace into _latchedScopedForRace so an in-flight
+        // race never tears if the env var is flipped mid-run. The supervisor
+        // exports RACING_RACE_SCOPED ("1" = race-scoped, "0" = per-car
+        // terminals); absent / unparseable, the coordinator defaults to
+        // race-scoped (the trained Latest behaviour).
         public bool IsRaceScoped
         {
             get
             {
                 float ovr = _envOverride?.Invoke() ?? float.NaN;
                 if (!float.IsNaN(ovr)) return ovr >= 0.5f;
-                if (_stage != null && _stage.Resolver != null)
-                    return _stage.Resolve() >= RaceScopedMinStage;
-                return false;
+                return true;
             }
         }
 
         public RaceCoordinator(
             IEventBus bus,
-            IStageIdProvider stage = null,
             ITimeProvider time = null,
             Func<float> envOverride = null,
             Func<float> lapTargetOverride = null) : base(bus)
         {
-            _stage = stage;
             _time = time;
             _envOverride = envOverride;
             _lapTargetOverride = lapTargetOverride;
@@ -531,8 +479,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Race
             _postFinishStepsRemaining = -1;
             _raceStartSimTime = _time?.Time ?? 0f;
 
-            // Resolve lap target with env override / default. Read once per
-            // race so a stage flip mid-race doesn't move the finish line.
+            // Resolve lap target with env override / default. Read once per race.
             float lapOvr = _lapTargetOverride?.Invoke() ?? float.NaN;
             _latchedLapTarget = !float.IsNaN(lapOvr) && lapOvr > 0f
                 ? Mathf.Max(1, Mathf.RoundToInt(lapOvr))
@@ -578,9 +525,9 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Race
 
     /// <summary>
     /// Installs <see cref="IRaceCoordinator"/> and binds its env-var hooks.
-    /// The supervisor sets RACING_RACE_SCOPED / RACING_LAP_TARGET to
-    /// pin behaviour without touching the yaml; absent env vars defer to
-    /// the stage_id rule (race-scoped at stage 5+, default lap target 3).
+    /// The supervisor sets RACING_RACE_SCOPED / RACING_LAP_TARGET to pin
+    /// behaviour without touching the yaml; absent env vars default to
+    /// race-scoped with lap target 3 (the canonical Latest training shape).
     /// </summary>
     public sealed class RaceCoordinatorSystemInstaller : ISystemInstaller
     {
@@ -588,7 +535,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Race
         {
             builder.AddSingleton(c => new RaceCoordinator(
                     c.Resolve<IEventBus>(),
-                    TryResolve<IStageIdProvider>(c),
                     TryResolve<ITimeProvider>(c),
                     envOverride: ReadRaceScopedEnv,
                     lapTargetOverride: ReadLapTargetEnv),
@@ -608,7 +554,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Race
         }
 
         // float.NaN sentinel = "not set" so the coordinator falls through to
-        // its stage_id-based default. Any 0/1 in the env wins outright.
+        // its default (race-scoped). Any 0/1 in the env wins outright.
         private static float ReadRaceScopedEnv()
         {
             string raw = System.Environment.GetEnvironmentVariable("RACING_RACE_SCOPED");
@@ -664,9 +610,8 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Race
             _bus.Subscribe<RaceStartedEvent>(_ => _raceStarted++);
             _bus.Subscribe<RaceEndedEvent>(e => { _raceEnded++; _lastEndEvent = e; });
 
-            // Force race-scoped on via env override. stage provider null so
-            // the env override is the only signal the coordinator consults.
-            var coord = new RaceCoordinator(_bus, stage: null, time: null,
+            // Force race-scoped on via env override.
+            var coord = new RaceCoordinator(_bus, time: null,
                 envOverride: () => 1f, lapTargetOverride: () => 3f);
             _coordinator = coord;
 

@@ -1,6 +1,5 @@
 using UnityPpoRacingTrainer.Core.AiDriver.Physics;
 using UnityPpoRacingTrainer.Core.AiDriver.Training.Rewards;
-using UnityPpoRacingTrainer.Core.AiDriver.Training.Stages;
 using Unidad.Core.Abstractions;
 
 namespace UnityPpoRacingTrainer.Core.AiDriver.Training
@@ -14,11 +13,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
     /// win on tie — fuel-out / puncture-off-track / etc. are terminal and
     /// should not be drowned out by a simultaneous lap-complete).
     ///
-    /// Per-tick gating: channels are skipped for stage ids not listed in their
-    /// manifest entry's <c>activeInStages</c> array (empty = always active).
-    /// The single gating point lives here so a new channel only needs to write
-    /// its reward logic; the stage gate is data.
-    ///
     /// When the shaper or the channel list is empty, this falls through to the
     /// base source unchanged — the extension surface is dormant by default.
     /// </summary>
@@ -28,21 +22,18 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
         private readonly IRewardShaper _shaper;
         private readonly ITimeProvider _time;
         private readonly ActiveRewardChannels _channels;
-        private readonly IActiveStageProfile _activeStage;
         private float _lastTime;
 
         public CompositeEpisodeRewardSource(
             IEpisodeRewardSource baseSource,
             IRewardShaper shaper,
             ITimeProvider time,
-            ActiveRewardChannels channels = null,
-            IActiveStageProfile activeStage = null)
+            ActiveRewardChannels channels = null)
         {
             _base = baseSource;
             _shaper = shaper;
             _time = time;
             _channels = channels ?? ActiveRewardChannels.Empty;
-            _activeStage = activeStage;
         }
 
         public void OnEpisodeBegin(CarId carId)
@@ -73,18 +64,13 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training
                 end = drained.End ?? perTick.End ?? end;
             }
 
-            if (_channels.Channels.Count > 0)
+            for (int i = 0; i < _channels.Channels.Count; i++)
             {
-                int stageId = _activeStage?.Current?.StageId ?? 0;
-                for (int i = 0; i < _channels.Channels.Count; i++)
-                {
-                    var ac = _channels.Channels[i];
-                    if (!ac.IsActiveInStage(stageId)) continue;
-                    var perTick = ac.Channel.AccumulatePerTick(carId, dt);
-                    var drained = ac.Channel.Drain(carId);
-                    totalReward += perTick.RewardDelta + drained.RewardDelta;
-                    end = drained.End ?? perTick.End ?? end;
-                }
+                var ac = _channels.Channels[i];
+                var perTick = ac.Channel.AccumulatePerTick(carId, dt);
+                var drained = ac.Channel.Drain(carId);
+                totalReward += perTick.RewardDelta + drained.RewardDelta;
+                end = drained.End ?? perTick.End ?? end;
             }
 
             return new StepResult(totalReward, end);

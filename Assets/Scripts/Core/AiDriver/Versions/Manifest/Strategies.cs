@@ -36,12 +36,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
     /// per-tick delta (<see cref="AccumulatePerTick"/>) or a pending delta /
     /// terminal-end signal that the composite reward source will drain at the
     /// end of the tick (<see cref="Drain"/>).
-    ///
-    /// Channels are gated per stage by the manifest's <c>rewardChannels[]</c>
-    /// entry; the composite source skips inactive channels for the current
-    /// <c>stage_id</c> without invoking them, so a channel does NOT need to
-    /// guard its own stage check. Channels must remain idle when their stage
-    /// gate is not satisfied — the composite source is the single gating point.
     /// </summary>
     public interface IRewardChannel
     {

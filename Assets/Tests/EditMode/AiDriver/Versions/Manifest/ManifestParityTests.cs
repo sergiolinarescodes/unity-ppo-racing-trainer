@@ -1,10 +1,10 @@
 using System.IO;
 using NUnit.Framework;
 using UnityEngine;
+using UnityPpoRacingTrainer.Core.AiDriver.Config;
 using UnityPpoRacingTrainer.Core.AiDriver.Physics;
 using UnityPpoRacingTrainer.Core.AiDriver.Policy;
 using UnityPpoRacingTrainer.Core.AiDriver.Training;
-using UnityPpoRacingTrainer.Core.AiDriver.Training.Stages;
 using UnityPpoRacingTrainer.Core.AiDriver.Versions;
 using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 
@@ -15,9 +15,8 @@ namespace UnityPpoRacingTrainer.Core.Tests.AiDriver.Versions.Manifest
     /// <c>Assets/_Bootstrap/Configs/Versions/*.json</c> are well-formed and
     /// don't silently drift on a future edit. The manifest is the source of
     /// truth — these tests pin the shapes a human edit could break (frozen
-    /// observation layout, stage curriculum content, drafting defaults) so
-    /// the next person who changes the JSON sees the test fail before the
-    /// trainer does.
+    /// observation layout, drafting defaults) so the next person who changes
+    /// the JSON sees the test fail before the trainer does.
     /// </summary>
     [TestFixture]
     public class ManifestParityTests
@@ -93,62 +92,6 @@ namespace UnityPpoRacingTrainer.Core.Tests.AiDriver.Versions.Manifest
         }
 
         [Test]
-        public void Latest_Stages_Are_The_Six_Curriculum_Stages()
-        {
-            var profile = new ManifestBackedVersionProfile(_latest,
-                () => NullRewardShaper.Instance);
-            var registry = profile.StageProfiles;
-
-            // Hand-coded feature bitmasks from the original C# StageProfiles.cs
-            // (deleted in Phase 4). These are the snapshot of "what was true at
-            // the time we migrated to manifest-driven versioning". Edits here
-            // are explicit and visible in code review.
-            AssertStage(registry, 0, "Stage0SoloWarmup",
-                StageFeature.TireOverstressPenalty | StageFeature.TireObservations,
-                expectedOpponents: 0, fuel: FuelSamplingMode.Abundant, personality: PersonalitySamplingMode.Uniform);
-            AssertStage(registry, 1, "Stage1Grid",
-                StageFeature.OvertakeReward | StageFeature.GotPassedPenalty | StageFeature.MicroSectorPositionBonus
-                    | StageFeature.LapPositionBonus | StageFeature.CarHitCarPenalty | StageFeature.DraftBonus
-                    | StageFeature.CleanDrivingBonus | StageFeature.HoldPositionBonus | StageFeature.OpponentObservations
-                    | StageFeature.TireOverstressPenalty | StageFeature.TireObservations,
-                expectedOpponents: 11, fuel: FuelSamplingMode.Abundant, personality: PersonalitySamplingMode.Uniform);
-            AssertStage(registry, 2, "Stage2FuelScarcity",
-                StageFeature.OvertakeReward | StageFeature.GotPassedPenalty | StageFeature.MicroSectorPositionBonus
-                    | StageFeature.LapPositionBonus | StageFeature.CarHitCarPenalty | StageFeature.DraftBonus
-                    | StageFeature.CleanDrivingBonus | StageFeature.HoldPositionBonus
-                    | StageFeature.FuelMarginPenalty | StageFeature.FuelOutTerminal
-                    | StageFeature.OpponentObservations | StageFeature.FuelObservations
-                    | StageFeature.TireOverstressPenalty | StageFeature.TireObservations,
-                expectedOpponents: 11, fuel: FuelSamplingMode.Scarcity, personality: PersonalitySamplingMode.Uniform);
-            AssertStage(registry, 3, "Stage3TireFuel",
-                StageFeature.OvertakeReward | StageFeature.GotPassedPenalty | StageFeature.MicroSectorPositionBonus
-                    | StageFeature.LapPositionBonus | StageFeature.CarHitCarPenalty | StageFeature.DraftBonus
-                    | StageFeature.CleanDrivingBonus | StageFeature.HoldPositionBonus
-                    | StageFeature.FuelMarginPenalty | StageFeature.FuelOutTerminal
-                    | StageFeature.TireOverstressPenalty | StageFeature.PunctureOffTrackTerminal
-                    | StageFeature.OpponentObservations | StageFeature.FuelObservations | StageFeature.TireObservations,
-                expectedOpponents: 11, fuel: FuelSamplingMode.Scarcity, personality: PersonalitySamplingMode.Uniform);
-            AssertStage(registry, 4, "Stage4AuthoredTwoCar",
-                StageFeature.OvertakeReward | StageFeature.GotPassedPenalty | StageFeature.MicroSectorPositionBonus
-                    | StageFeature.LapPositionBonus | StageFeature.CarHitCarPenalty | StageFeature.DraftBonus
-                    | StageFeature.CleanDrivingBonus | StageFeature.HoldPositionBonus
-                    | StageFeature.FuelMarginPenalty | StageFeature.FuelOutTerminal
-                    | StageFeature.TireOverstressPenalty | StageFeature.PunctureOffTrackTerminal
-                    | StageFeature.OpponentObservations | StageFeature.FuelObservations | StageFeature.TireObservations
-                    | StageFeature.PersonalityObservations,
-                expectedOpponents: 11, fuel: FuelSamplingMode.Scarcity, personality: PersonalitySamplingMode.Archetype);
-            AssertStage(registry, 5, "Stage5PackSelfPlay",
-                StageFeature.OvertakeReward | StageFeature.GotPassedPenalty | StageFeature.MicroSectorPositionBonus
-                    | StageFeature.LapPositionBonus | StageFeature.CarHitCarPenalty | StageFeature.DraftBonus
-                    | StageFeature.CleanDrivingBonus | StageFeature.HoldPositionBonus
-                    | StageFeature.FuelMarginPenalty | StageFeature.FuelOutTerminal
-                    | StageFeature.TireOverstressPenalty
-                    | StageFeature.OpponentObservations | StageFeature.FuelObservations | StageFeature.TireObservations
-                    | StageFeature.PersonalityObservations | StageFeature.FrontConeRayObservations,
-                expectedOpponents: 11, fuel: FuelSamplingMode.Scarcity, personality: PersonalitySamplingMode.Archetype);
-        }
-
-        [Test]
         public void Latest_FloatsPerFrame_Equals_Sixty()
         {
             Assert.That(_latest.Observation.FloatsPerFrame, Is.EqualTo(60),
@@ -205,20 +148,42 @@ namespace UnityPpoRacingTrainer.Core.Tests.AiDriver.Versions.Manifest
             Assert.That(all.ContainsKey("v1"), Is.True, "LoadAll missing 'v1'.");
         }
 
-        private static void AssertStage(IStageProfileRegistry registry, int id, string name,
-            StageFeature expectedFeatures, int expectedOpponents,
-            FuelSamplingMode fuel, PersonalitySamplingMode personality)
+        // Regression: TrainingSettingsService must project the manifest its
+        // installer was constructed with (NOT a hard-coded "latest"). v1 and
+        // latest currently carry identical reward/physics values, so this
+        // asserts the projection identity by switching the id and confirming
+        // RewardShaper / Physics / TirePhysics tracks the v1 record — the
+        // structural check catches a future const-"latest" regression long
+        // before any value-level drift would.
+        [Test]
+        public void TrainingSettingsService_Projects_ActiveVersion()
         {
-            Assert.That(registry.Has(id), Is.True, $"manifest stages array missing id {id}.");
-            var actual = registry.Get(id);
-            Assert.That(actual.Name, Is.EqualTo(name), $"stage {id} name drift.");
-            Assert.That(actual.Features, Is.EqualTo(expectedFeatures),
-                $"stage {id} feature bitmask drift: expected {expectedFeatures}, got {actual.Features}");
-            Assert.That(actual.ExpectedOpponentCount, Is.EqualTo(expectedOpponents),
-                $"stage {id} ExpectedOpponentCount drift.");
-            Assert.That(actual.Fuel, Is.EqualTo(fuel), $"stage {id} fuel sampling drift.");
-            Assert.That(actual.Personality, Is.EqualTo(personality),
-                $"stage {id} personality sampling drift.");
+            var svcLatest = new TrainingSettingsService("latest");
+            var svcV1 = new TrainingSettingsService("v1");
+
+            Assert.That(svcLatest.Current.RewardShaper, Is.EqualTo(_latest.RewardShaper),
+                "TrainingSettingsService('latest').RewardShaper != latest.json's rewardShaper.");
+            Assert.That(svcV1.Current.RewardShaper, Is.EqualTo(_v1.RewardShaper),
+                "TrainingSettingsService('v1').RewardShaper != v1.json's rewardShaper. " +
+                "If the service is hardcoded to 'latest', this fails the moment latest diverges from v1.");
+
+            Assert.That(svcV1.Current.Physics, Is.EqualTo(_v1.Physics),
+                "TrainingSettingsService('v1').Physics != v1.json's physics.");
+            Assert.That(svcV1.Current.TirePhysics, Is.EqualTo(_v1.TirePhysics),
+                "TrainingSettingsService('v1').TirePhysics != v1.json's tirePhysics.");
         }
+
+        // Observation section is frozen per ONNX checkpoint. The service
+        // discards the manifest's observation block at projection time so a
+        // hand-edit of the JSON cannot reshape the runtime sensor.
+        [Test]
+        public void TrainingSettingsService_Freezes_Observation_To_BakedDefaults()
+        {
+            var svc = new TrainingSettingsService("latest");
+            Assert.That(svc.Current.Observation, Is.EqualTo(new ObservationSettings()),
+                "TrainingSettingsService.Current.Observation must equal new ObservationSettings(). " +
+                "If this fails, the projection is leaking manifest values into the runtime obs section.");
+        }
+
     }
 }

@@ -1,6 +1,3 @@
-using UnityPpoRacingTrainer.Core.AiDriver;
-using UnityPpoRacingTrainer.Core.AiDriver.Training;
-using UnityPpoRacingTrainer.Core.AiDriver.Training.Stages;
 using Reflex.Core;
 using Unidad.Core.Bootstrap;
 using Unidad.Core.EventBus;
@@ -12,10 +9,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Race
     {
         public void Install(ContainerBuilder builder)
         {
-            builder.AddSingleton(c => new RaceStateService(
-                    c.Resolve<IEventBus>(),
-                    c.TryResolveOptional<IActiveStageProfile>(),
-                    c.TryResolveOptional<IStageIdProvider>()),
+            builder.AddSingleton(c => new RaceStateService(c.Resolve<IEventBus>()),
                 typeof(IRaceStateService));
         }
 

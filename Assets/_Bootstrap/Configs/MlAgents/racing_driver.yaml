@@ -31,30 +31,14 @@ behaviors:
     summary_freq: 30000
     threaded: true
 
-# No curriculum. Single fixed environment from step 0: every reward
-# channel, observation channel, archetype personality, fuel scarcity,
-# tire wear → grip degradation (no puncture terminal). Internally
-# this maps to stage_id=5 because that is the only profile with the
-# full feature mask; supervisor never rewrites this value.
-#
-# GOTCHA — stage_id=5 is feature-mask-only here, but RaceCoordinator
-# (Assets/Scripts/Core/AiDriver/Race/RaceState.cs, IsRaceScoped) ALSO
-# treats stage_id >= 5 as the "race-scoped 3-lap episode" mode. In
-# race-scoped mode EpisodeRunner suppresses per-car terminals
-# (Wreck / OffTrack / WallCap / StepCap-at-MaxStepsPerEpisode) and a
-# car's PPO episode only ends when the RaceCoordinator finalises the
-# 3-lap race. A cold-start policy cannot finish 3 laps, so episodes
-# never terminate and the trainer logs "No episode was completed
-# since last summary" for millions of steps with zero reward gradient.
-#
-# Cold-start launches MUST therefore export RACING_RACE_SCOPED=0 in
-# the process env before mlagents-learn starts, so RaceCoordinator's
-# ReadRaceScopedEnv() override forces per-car terminals back on.
-# The supervisor takes care of this via:
+# Cold-start launches MUST export RACING_RACE_SCOPED=0 in the process
+# env before mlagents-learn starts, so RaceCoordinator's
+# ReadRaceScopedEnv() override forces per-car terminals back on. A
+# cold-start policy cannot finish a 3-lap race, so without this flag
+# episodes never terminate and the trainer logs "No episode was
+# completed since last summary" for millions of steps with zero
+# reward gradient. The supervisor takes care of this via:
 #   pwsh tools/train_unattended.ps1 -RaceScoped 0 ...
-# Without that flag the run will wedge after the first few episodes.
-environment_parameters:
-  stage_id: 5.0
 
 engine_settings:
   width: 84

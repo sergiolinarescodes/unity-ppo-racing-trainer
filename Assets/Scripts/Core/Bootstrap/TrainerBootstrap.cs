@@ -14,12 +14,10 @@ using UnityPpoRacingTrainer.Core.AiDriver.Race;
 using UnityPpoRacingTrainer.Core.AiDriver.Telemetry;
 using UnityPpoRacingTrainer.Core.AiDriver.Training;
 using UnityPpoRacingTrainer.Core.AiDriver.Versions;
+using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 using UnityPpoRacingTrainer.Core.Ghost.Presentation;
 using UnityPpoRacingTrainer.Core.Track.Authoring.CircuitProfiles;
 using Unidad.Core.EventBus;
-#if AIDRIVER_TRAINING
-using Unity.MLAgents;
-#endif
 using UnityPpoRacingTrainer.Core.Terrain;
 using UnityPpoRacingTrainer.Core.Track;
 using UnityPpoRacingTrainer.Core.Track.Generation.Realistic;
@@ -40,8 +38,6 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
     /// <item>Eagerly initialises a flat training terrain (no player Build phase here).</item>
     /// <item>Resolves <c>TrainingDirector</c>, builds the first procedural loop, and
     /// instantiates the agent prefab(s) at the lap-start pose.</item>
-    /// <item>Wires <c>TrainingDirector.StageIdProvider</c> to ML-Agents'
-    /// <c>EnvironmentParameters</c> so YAML curriculum configs can flip the stage.</item>
     /// </list>
     /// Per-episode random spawn anchor + heading jitter live in
     /// <see cref="AiDriverPolicyService.BeginEpisode"/>; this bootstrap only positions
@@ -56,7 +52,7 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
         [SerializeField] private int terrainDepth = 30;
         [Tooltip("Which AI driver model version this trainer scene runs. String id matching a <id>.json under Assets/_Bootstrap/Configs/Versions/ (\"latest\" = canonical, \"v1\" = first snapshot, etc.). Prefab, ONNX, yaml, and physics defaults all resolve from the matching IAiDriverVersionProfile via DI. New snapshots = drop a new <id>.json; no enum bump required.")]
         [SerializeField] private string activeVersionId = "latest";
-        [Tooltip("How many agents to spawn on the same loop. Cars ghost through each other; experience aggregates under the shared BehaviorName for ~Nx faster PPO. Hard-capped at 200 at runtime. The env var RACING_AGENT_COUNT overrides this serialized value at startup (used by the supervisor to switch counts per curriculum stage).")]
+        [Tooltip("How many agents to spawn on the same loop. Cars ghost through each other; experience aggregates under the shared BehaviorName for ~Nx faster PPO. Hard-capped at 200 at runtime. The env var RACING_AGENT_COUNT overrides this serialized value at startup.")]
         [Range(1, 200)]
         [SerializeField] private int agentCount = 24;
 
@@ -74,10 +70,7 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
         }
 
         [Header("Editor inference overrides")]
-        [Tooltip("Force a specific stage_id when running inference in the editor (no Python trainer). -1 = read from Academy / default to 0. Curriculum stages: 0=solo no-consumables, 1=solo tire, 2=solo fuel, 3=solo tire+fuel, 4=2-car draft+collision, 5=pack self-play.")]
-        [Range(-1, 5)]
-        [SerializeField] private int stageOverride = -1;
-        [Tooltip("Force a specific circuit by its 8-char id (e.g. \"08c66d8e\"). Empty = random from the library for the active stage. Ignored on Stage 0 (recipe).")]
+        [Tooltip("Force a specific circuit by its 8-char id (e.g. \"08c66d8e\"). Empty = random from the authored-closure library.")]
         [SerializeField] private string forceCircuitId = string.Empty;
 
 #if AIDRIVER_TRAINING
@@ -87,10 +80,13 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
         protected override void RegisterInstallers(List<ISystemInstaller> installers)
         {
             // TrainingSettings goes FIRST so every downstream service can
-            // resolve ITrainingSettingsService in its ctor. Reads
-            // settings.json at the project root, falls back to baked defaults
-            // when missing/malformed.
-            installers.Add(new UnityPpoRacingTrainer.Core.AiDriver.Config.TrainingSettingsSystemInstaller());
+            // resolve ITrainingSettingsService in its ctor. Projects the
+            // <activeVersionId>.json manifest under Assets/_Bootstrap/Configs/
+            // Versions/ into the legacy TrainingSettings shape; falls back to
+            // baked defaults when missing/malformed. Same id is passed to
+            // AiDriverVersionsSystemInstaller below so reward + physics +
+            // policy all draw from one manifest.
+            installers.Add(new UnityPpoRacingTrainer.Core.AiDriver.Config.TrainingSettingsSystemInstaller(activeVersionId));
             installers.Add(new GridSystemInstaller());
             installers.Add(new TerrainSystemInstaller());
             // GhostPresentation registers IDropFromAirAnimator, required by
@@ -115,10 +111,14 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
             installers.Add(new AiDriverVersionsSystemInstaller(activeVersionId));
             // Latest requires the full tire/fuel/draft/collision/race-state
             // stack. Profile carries this via RequiresSideSystems but the
-            // installer list is built before any container exists, so we read
-            // a local flag here. Frozen historical snapshots that ran without
-            // side systems would override this here.
-            bool requiresSideSystems = true;
+            // installer list is built before any container exists, so we
+            // read the active manifest synchronously here — same source the
+            // resolved profile will report at line 179 via OnContainerReady.
+            // Falls back to true (full stack) when the manifest is missing.
+            var manifestsForInstall = VersionManifestLoader.LoadAll();
+            bool requiresSideSystems = manifestsForInstall.TryGetValue(activeVersionId, out var activeManifest)
+                ? activeManifest.Runtime.RequiresSideSystems
+                : true;
             if (requiresSideSystems)
             {
                 installers.Add(new TirePhysicsSystemInstaller());
@@ -132,16 +132,11 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
                 // and ghost-spawn drive identical per-driver state.
                 installers.Add(new DriverPhysicsRegistrySystemInstaller());
             }
-            // Stage profile registry + IActiveStageProfile must be installed
-            // BEFORE Policy + Training installers so RewardShaper and
-            // AiDriverPolicyService can resolve IActiveStageProfile in their ctors.
-            installers.Add(new UnityPpoRacingTrainer.Core.AiDriver.Training.Stages.StageProfileSystemInstaller());
-            // Race coordinator owns the race-scoped episode lifecycle (stage
-            // 5+: 1 race = 1 PPO episode for every driver, no mid-race
-            // resets, race ends when all drivers either finish lap_target
-            // or are eliminated). Always installed; activation reads the
-            // active stage_id at race-start so stages 1–4 stay on the
-            // legacy per-car episode flow.
+            // Race coordinator owns the race-scoped episode lifecycle: one
+            // race = one PPO episode for every driver, no mid-race resets,
+            // race ends when all drivers either finish lap_target or are
+            // eliminated. The supervisor can opt out per-run via
+            // RACING_RACE_SCOPED=0; absent override defaults to race-scoped.
             installers.Add(new UnityPpoRacingTrainer.Core.AiDriver.Race.RaceCoordinatorSystemInstaller());
             installers.Add(new AiDriverPolicySystemInstaller());
             installers.Add(new AiDriverTrainingSystemInstaller());
@@ -193,8 +188,7 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
             var policy = container.Resolve<IAiDriverPolicyService>();
             // Sandbox: pin spawn to longest-straight midpoint. Value function
             // can't fit returns when every episode begins from a different
-            // anchor + heading on a regenerating loop. Re-enable random per-
-            // section exposure after stage 0 if needed.
+            // anchor + heading on a regenerating loop.
             if (policy is AiDriverPolicyService concretePolicy)
             {
                 concretePolicy.Spawn = SpawnStrategy.LongestStraightMidpoint;
@@ -211,8 +205,6 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
 
             var loop = container.Resolve<IClosedLoopService>();
             var director = container.Resolve<TrainingDirector>();
-            director.StageIdProvider = ResolveStageIdFromAcademy;
-            container.Resolve<IStageIdProvider>().Resolver = ResolveStageIdFromAcademy;
 
             // Editor inference override: pin the selector to a specific
             // circuit id so you can rerun the same loop deterministically
@@ -234,7 +226,7 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
             _loopAsciiLogger = new LoopAsciiLogger(
                 container.Resolve<IEventBus>(),
                 container.Resolve<ITrackPlacementService>(),
-                loop, ResolveStageIdFromAcademy);
+                loop);
 
             // Multi-agent shared loop: one Success across N agents should not
             // abort the in-flight episodes of the other N-1. Forced cadence
@@ -254,18 +246,15 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
                 Debug.Log("[TrainerBootstrap] regen disabled (RegenOnSuccess=false, ForcedRegenEveryN=0) for pinned circuit.");
             }
 
-            // All stages now train on authored-closure circuits, which always
-            // include the production wall geometry; no wall-free warmup stage.
-            int stageNow = ResolveStageIdFromAcademy();
+            // Authored-closure circuits always include production wall geometry.
             Track.TrackPlacementService.EmitWalls = true;
-            Debug.Log($"[TrainerBootstrap] stage={stageNow} EmitWalls=true (authored library)");
 
             // Open the telemetry sink early so episode end + circuit change
             // events are captured from the very first episode.
             TrainingTelemetry.EnsureOpen();
 
             director.Begin();
-            Debug.Log($"[TrainerBootstrap] director.Begin done; loopReady={director.InitialLoopReady} stage={director.LastStageId} spawn={director.CurrentSpawnPosition}");
+            Debug.Log($"[TrainerBootstrap] director.Begin done; loopReady={director.InitialLoopReady} spawn={director.CurrentSpawnPosition}");
 
             if (!director.InitialLoopReady)
             {
@@ -279,7 +268,7 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
                 var agent = SpawnAgent(versionProfile, director.CurrentSpawnPosition, director.CurrentSpawnHeading, i);
                 if (i == 0) firstAgent = agent;
             }
-            Debug.Log($"[TrainerBootstrap] spawned {n} agents on stage {director.LastStageId}");
+            Debug.Log($"[TrainerBootstrap] spawned {n} agents");
 
             // Memory probe: periodic snapshot to results/_telemetry/mem_<pid>_<stamp>.jsonl.
             // Reveals which subsystem grows over time when the trainer leaks RAM
@@ -340,16 +329,6 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
             try { return container.Resolve<ITrackCollisionService>(); }
             catch { return null; }
         }
-
-#if AIDRIVER_TRAINING
-        private int ResolveStageIdFromAcademy()
-        {
-            // Curriculum spans stage 0..5 (Stage0SoloWarmup .. Stage5PackSelfPlay).
-            if (stageOverride >= 0) return Mathf.Clamp(stageOverride, 0, 5);
-            float v = Academy.Instance.EnvironmentParameters.GetWithDefault("stage_id", 0f);
-            return Mathf.Clamp(Mathf.RoundToInt(v), 0, 5);
-        }
-#endif
 
         // Captured by SpawnAgent so the LoadedModelHud can display what's
         // actually wired without having to re-resolve the sentinel.
@@ -525,9 +504,9 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
         // Resolve every ITickable / IFixedTickable the container knows about so
         // the framework's TickRunner drives them each frame / fixed step. The
         // base implementations return empty lists, which would silently leave
-        // RaceCoordinator.Tick uncalled — stage 5+ race-scoped episodes depend
-        // on the coordinator's MaxRaceSteps + PostFinishBudget countdowns to
-        // backstop stuck races, so missing the override deadlocks the run.
+        // RaceCoordinator.Tick uncalled — race-scoped episodes depend on the
+        // coordinator's MaxRaceSteps + PostFinishBudget countdowns to backstop
+        // stuck races, so missing the override deadlocks the run.
         protected override List<ITickable> ResolveTickables(Container container)
         {
             return new List<ITickable>(container.All<ITickable>());
@@ -552,15 +531,13 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
             private readonly ITrackPlacementService _placement;
             private readonly IClosedLoopService _loop;
             private readonly IDisposable _subscription;
-            private readonly Func<int> _stageIdProvider;
             private int _closures;
 
             public LoopAsciiLogger(IEventBus bus, ITrackPlacementService placement,
-                IClosedLoopService loop, Func<int> stageIdProvider)
+                IClosedLoopService loop)
             {
                 _placement = placement;
                 _loop = loop;
-                _stageIdProvider = stageIdProvider ?? (() => -1);
                 _subscription = bus.Subscribe<LoopClosedEvent>(OnLoopClosed);
                 try
                 {
@@ -584,7 +561,6 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
             {
                 var sb = new StringBuilder(2048);
                 sb.Append("=== closure #").Append(_closures)
-                  .Append("  stage=").Append(_stageIdProvider())
                   .Append("  loopId=").Append(evt.LoopId)
                   .Append("  pieces=").Append(_placement.Placed.Count)
                   .Append("  anchors=").Append(evt.AnchorCount)

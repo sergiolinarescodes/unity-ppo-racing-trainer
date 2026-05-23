@@ -54,15 +54,11 @@ namespace UnityPpoRacingTrainer.Core.Track.Generation.Realistic.Scenarios
         public RealisticTrackGenerationScenario() : base(new TestScenarioDefinition(
             "ai-driver-realistic-loop",
             "AI Driver — Realistic F1-Style Loop (Live)",
-            "Runs the F1-flavoured generator with the chosen seed + curriculum " +
-            "stage and renders the result via TrackRibbonService. Same (seed, " +
-            "stage) → identical track. Stage 1 routes to recipe rectangles via " +
-            "the curriculum selector elsewhere; this scenario calls the realistic " +
-            "generator directly so all stages exercise it.",
+            "Runs the F1-flavoured generator with the chosen seed and renders " +
+            "the result via TrackRibbonService. Same seed → identical track.",
             new[]
             {
                 new ScenarioParameter("seed", "Seed", typeof(int), 1234, 0, 1_000_000),
-                new ScenarioParameter("stageId", "Stage Id (1-5)", typeof(int), 2, 1, 5),
                 new ScenarioParameter("allowDiagonals", "Allow Diagonal Sweeps", typeof(bool), true),
                 new ScenarioParameter("targetLengthCells", "Target Length (cells)", typeof(int), 60, 20, 200),
                 new ScenarioParameter("turnDensity", "Turn Density (0..1)", typeof(float), 0.4f, 0f, 1f),
@@ -76,7 +72,6 @@ namespace UnityPpoRacingTrainer.Core.Track.Generation.Realistic.Scenarios
         protected override void ExecuteInternal(ScenarioParameterOverrides overrides)
         {
             int seed = ResolveParam<int>(overrides, "seed");
-            int stageId = ResolveParam<int>(overrides, "stageId");
             bool allowDiagonals = ResolveParam<bool>(overrides, "allowDiagonals");
             int targetLengthCells = ResolveParam<int>(overrides, "targetLengthCells");
             float turnDensity = ResolveParam<float>(overrides, "turnDensity");
@@ -85,11 +80,7 @@ namespace UnityPpoRacingTrainer.Core.Track.Generation.Realistic.Scenarios
             int attempts = ResolveParam<int>(overrides, "attempts");
             int timeoutMs = ResolveParam<int>(overrides, "timeoutMs");
 
-            if (!CurriculumStages.TryGet(stageId, out var stage))
-            {
-                Debug.LogWarning($"[RealTrackGen] Unknown stageId={stageId}, falling back to stage 1.");
-                stage = CurriculumStages.All[0];
-            }
+            var stage = CurriculumStages.Default;
 
             _eventBus = new ScenarioEventBus();
             _factory = new ScenarioGameObjectFactory();

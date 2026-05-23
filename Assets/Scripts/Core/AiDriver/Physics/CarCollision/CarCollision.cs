@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using UnityPpoRacingTrainer.Core.AiDriver.Policy;
-using UnityPpoRacingTrainer.Core.AiDriver.Training;
 using Unidad.Core.Abstractions;
 using Unidad.Core.EventBus;
 using Unidad.Core.Systems;
@@ -181,24 +180,18 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Physics.CarCollision
         private const float HeadingJitterRad = 0.04f;
 
         private readonly ICarSimulationService _sim;
-        private readonly IStageIdProvider _stage;
         private readonly Dictionary<CarId, DriverPersonality> _personality = new();
         private readonly List<CarId> _active = new();
 
-        public CarCollisionService(IEventBus eventBus, ICarSimulationService sim, IStageIdProvider stage = null) : base(eventBus)
+        public CarCollisionService(IEventBus eventBus, ICarSimulationService sim) : base(eventBus)
         {
             _sim = sim;
-            _stage = stage;
         }
 
         public void RegisterDriver(CarId carId, DriverPersonality personality) => _personality[carId] = personality;
 
         public void FixedTick(float fixedDeltaTime)
         {
-            // Stage-0 warmup: cars phase through each other. No pair check, no
-            // separation, no impulse, no damage, no event. Resumes at stage ≥ 1.
-            if (_stage != null && _stage.Resolver != null && _stage.Resolve() == 0) return;
-
             _active.Clear();
             foreach (var id in _sim.ActiveCars) _active.Add(id);
 
