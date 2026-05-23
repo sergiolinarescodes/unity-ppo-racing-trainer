@@ -4,25 +4,6 @@ All notable changes to this package are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.5] - 2026-05-24
-
-### Fixed
-- `VersionManifestLoader` now reads the package-shipped manifests directly off disk via `UnityEditor.PackageManager.PackageInfo.FindForAssembly(...).resolvedPath` in Editor builds, before falling back to `Resources.LoadAll` and per-name `Resources.Load`. We observed Unity reusing stale per-asset import state when the package version bumps — the new `Library/PackageCache/com.sergiolinarescodes.ppo-racing-trainer@<hash>/` directory contained the JSON files on disk but Unity never re-imported them into the AssetDatabase, so every Resources lookup returned null. `File.ReadAllText` doesn't care about the AssetDatabase. Editor-only; player builds still go through Resources (which depend on a clean AssetDatabase walk during the build pipeline).
-
-## [0.1.4] - 2026-05-24
-
-### Fixed
-- `VersionManifestLoader` now falls back to direct `Resources.Load<TextAsset>("AiDriver/Versions/<id>")` calls for known shipped manifest ids (`latest`, `v1`) when `Resources.LoadAll` on the package-shipped subfolder returns empty. In v0.1.3 the loader logged "trying package-shipped Resources" but `LoadAll` returned 0 TextAssets even though Unity's `TextScriptImporter` had successfully imported both JSON files — a Unity 6 quirk with `Resources.LoadAll` on subfolders inside a package's `Resources/` tree. By-name `Resources.Load` is unaffected. Adding a new packaged version means appending its id to `PackagedVersionIds` in `VersionManifestLoader`.
-
-## [0.1.3] - 2026-05-24
-
-### Fixed
-- `VersionManifestLoader.LoadAll` now falls back to `Resources/AiDriver/Versions/*.json` when no on-disk `Assets/_Bootstrap/Configs/Versions/` folder is present. Consumers (e.g. the game repo) no longer need to copy training-config files in order to seed `AiDriverVersionRegistry`. Disk entries still win when both sources populate, so the trainer's `/settings` live-edit workflow is unchanged.
-
-### Added
-- Canonical `latest.json` and `v1.json` manifests shipped inside the package at `Runtime/Resources/AiDriver/Versions/`. Loaded via `Resources.LoadAll<TextAsset>("AiDriver/Versions")`.
-- No-arg `VersionManifestSystemInstaller()` convenience constructor that internally calls `VersionManifestLoader.LoadAll()`. Lets a consumer `installers.Add(new VersionManifestSystemInstaller())` without pre-loading the dict.
-
 ## [0.1.2] - 2026-05-24
 
 ### Fixed

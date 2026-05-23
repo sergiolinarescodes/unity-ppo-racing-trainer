@@ -14,142 +14,39 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
     /// an exception. Mirrors the tolerant-load discipline already used by
     /// <c>TrainingSettingsService</c>.
     ///
-    /// Two sources, merged with disk-wins precedence:
-    /// <list type="number">
-    /// <item>Disk: <c>Assets/_Bootstrap/Configs/Versions/*.json</c> in the
-    /// host Unity project. Trainer's live-edit path — the /settings UI
-    /// writes here.</item>
-    /// <item>Resources fallback: <c>Resources/AiDriver/Versions/*.json</c>
-    /// shipped inside the UPM package. Consumers (e.g. the game) get the
-    /// canonical manifests baked into the package without having to copy
-    /// training config files into their own repo.</item>
-    /// </list>
+    /// Consumer projects (e.g. a game using the package as a UPM dep) typically
+    /// have no Versions folder of their own. They skip
+    /// <c>VersionManifestSystemInstaller</c> entirely and let
+    /// <c>AiDriverVersionsSystemInstaller</c> register the built-in default
+    /// profile instead.
     /// </summary>
     public static class VersionManifestLoader
     {
         public const string DefaultRelativeFolder = "Assets/_Bootstrap/Configs/Versions";
-        public const string DefaultResourcesPath = "AiDriver/Versions";
-
-        // Per-name fallback list. Resources.LoadAll on a folder inside a
-        // package's Resources/ tree is unreliable when the package is fetched
-        // as a git URL (Unity imports the TextAssets but LoadAll on the
-        // subfolder returns empty). Direct Resources.Load by name always
-        // works once the asset is imported. Add any new id shipped under
-        // Runtime/Resources/AiDriver/Versions/ here so it survives the
-        // LoadAll quirk on consumer projects.
-        private static readonly string[] PackagedVersionIds = { "latest", "v1" };
 
         public static IReadOnlyDictionary<string, VersionManifest> LoadAll(string folder = null)
         {
-            var result = new Dictionary<string, VersionManifest>(StringComparer.OrdinalIgnoreCase);
-
-            // Pass 1 — disk. Trainer project edits these via the /settings UI.
             var dir = ResolveFolder(folder ?? DefaultRelativeFolder);
-            if (Directory.Exists(dir))
+            var result = new Dictionary<string, VersionManifest>(StringComparer.OrdinalIgnoreCase);
+            if (!Directory.Exists(dir))
             {
-                foreach (var path in Directory.GetFiles(dir, "*.json"))
-                {
-                    var manifest = TryLoad(path);
-                    if (manifest == null) continue;
-                    if (result.ContainsKey(manifest.VersionId))
-                    {
-                        Debug.LogError($"[VersionManifestLoader] duplicate version_id '{manifest.VersionId}' at {path}; ignored.");
-                        continue;
-                    }
-                    result[manifest.VersionId] = manifest;
-                }
-                Debug.Log($"[VersionManifestLoader] loaded {result.Count} manifest(s) from {dir}.");
-            }
-            else
-            {
-                Debug.Log($"[VersionManifestLoader] disk folder missing at {dir}; trying package-shipped Resources.");
+                Debug.Log($"[VersionManifestLoader] folder missing at {dir}; returning empty set.");
+                return result;
             }
 
-#if UNITY_EDITOR
-            // Pass 1.5 — direct file-system read from the package's resolved
-            // path. Bypasses Unity's AssetDatabase / Resources lookup, which
-            // we've observed silently skip importing the package-shipped
-            // manifests on consumer projects (e.g. when the package version
-            // bumps but Unity reuses stale per-asset import state, the new
-            // cache directory's JSONs never enter the AssetDatabase and
-            // every Resources lookup returns null). File.ReadAllText does
-            // not care about any of that. Editor-only; player builds must
-            // rely on the Resources passes below — but a successful Build
-            // necessarily walks the AssetDatabase, so any manifest missing
-            // from it would also be missing from the built player and we'd
-            // catch the gap before shipping.
-            try
+            foreach (var path in Directory.GetFiles(dir, "*.json"))
             {
-                var pkg = UnityEditor.PackageManager.PackageInfo.FindForAssembly(
-                    typeof(VersionManifestLoader).Assembly);
-                if (pkg != null)
-                {
-                    var pkgVersionsDir = Path.Combine(pkg.resolvedPath, "Runtime", "Resources", "AiDriver", "Versions");
-                    if (Directory.Exists(pkgVersionsDir))
-                    {
-                        int pickedFromPkg = 0;
-                        foreach (var path in Directory.GetFiles(pkgVersionsDir, "*.json"))
-                        {
-                            var manifest = TryLoad(path);
-                            if (manifest == null) continue;
-                            if (result.ContainsKey(manifest.VersionId)) continue;
-                            result[manifest.VersionId] = manifest;
-                            pickedFromPkg++;
-                        }
-                        Debug.Log($"[VersionManifestLoader] picked up {pickedFromPkg} manifest(s) from package path {pkgVersionsDir}.");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[VersionManifestLoader] PackageInfo fallback failed: {ex.Message}");
-            }
-#endif
-
-            // Pass 2 — Resources.LoadAll on the package's Resources subfolder.
-            // Auto-picks up anything dropped into Runtime/Resources/AiDriver/
-            // Versions/. Disk entries above always win.
-            int beforeResources = result.Count;
-            var assets = Resources.LoadAll<TextAsset>(DefaultResourcesPath);
-            int pickedLoadAll = 0;
-            foreach (var ta in assets)
-            {
-                if (ta == null || string.IsNullOrEmpty(ta.text)) continue;
-                var manifest = TryParse(ta.text, $"Resources/{DefaultResourcesPath}/{ta.name}.json");
+                var manifest = TryLoad(path);
                 if (manifest == null) continue;
-                if (result.ContainsKey(manifest.VersionId)) continue;
-                result[manifest.VersionId] = manifest;
-                pickedLoadAll++;
-            }
-            Debug.Log($"[VersionManifestLoader] Resources.LoadAll returned {assets.Length} TextAsset(s), kept {pickedLoadAll}.");
-
-            // Pass 3 — per-name fallback. Resources.LoadAll on a subfolder of
-            // a package-shipped Resources/ tree returns an empty array in
-            // some Unity 6 configurations even though TextScriptImporter
-            // successfully imported the files. Direct Resources.Load by name
-            // works in every case once the asset is imported.
-            int pickedByName = 0;
-            foreach (var id in PackagedVersionIds)
-            {
-                if (result.ContainsKey(id)) continue;
-                var ta = Resources.Load<TextAsset>($"{DefaultResourcesPath}/{id}");
-                if (ta == null || string.IsNullOrEmpty(ta.text))
+                if (result.ContainsKey(manifest.VersionId))
                 {
-                    Debug.LogWarning($"[VersionManifestLoader] direct Resources.Load failed for {DefaultResourcesPath}/{id}.json — package may not be imported yet.");
+                    Debug.LogError($"[VersionManifestLoader] duplicate version_id '{manifest.VersionId}' at {path}; ignored.");
                     continue;
                 }
-                var manifest = TryParse(ta.text, $"Resources/{DefaultResourcesPath}/{id}.json");
-                if (manifest == null) continue;
-                if (result.ContainsKey(manifest.VersionId)) continue;
                 result[manifest.VersionId] = manifest;
-                pickedByName++;
-            }
-            if (pickedByName > 0)
-            {
-                Debug.Log($"[VersionManifestLoader] by-name fallback picked up {pickedByName} additional manifest(s).");
             }
 
-            Debug.Log($"[VersionManifestLoader] final manifest count = {result.Count} (disk had {beforeResources}).");
+            Debug.Log($"[VersionManifestLoader] loaded {result.Count} manifest(s) from {dir}.");
             return result;
         }
 
@@ -165,11 +62,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
                 Debug.LogError($"[VersionManifestLoader] read failed at {path}: {ex.Message}");
                 return null;
             }
-            return TryParse(json, path);
-        }
 
-        private static VersionManifest TryParse(string json, string sourceLabel)
-        {
             VersionManifest manifest;
             try
             {
@@ -181,23 +74,23 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
             }
             catch (JsonException ex)
             {
-                Debug.LogError($"[VersionManifestLoader] parse error at {sourceLabel}: {ex.Message}");
+                Debug.LogError($"[VersionManifestLoader] parse error at {path}: {ex.Message}");
                 return null;
             }
 
             if (manifest == null)
             {
-                Debug.LogError($"[VersionManifestLoader] parsed to null: {sourceLabel}");
+                Debug.LogError($"[VersionManifestLoader] parsed to null: {path}");
                 return null;
             }
             if (manifest.SchemaVersion != 1)
             {
-                Debug.LogError($"[VersionManifestLoader] schema_version {manifest.SchemaVersion} not supported at {sourceLabel}; skipped.");
+                Debug.LogError($"[VersionManifestLoader] schema_version {manifest.SchemaVersion} not supported at {path}; skipped.");
                 return null;
             }
             if (string.IsNullOrWhiteSpace(manifest.VersionId))
             {
-                Debug.LogError($"[VersionManifestLoader] version_id missing at {sourceLabel}; skipped.");
+                Debug.LogError($"[VersionManifestLoader] version_id missing at {path}; skipped.");
                 return null;
             }
             return manifest;

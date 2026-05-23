@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using UnityPpoRacingTrainer.Core.AiDriver.Policy.Observation;
 using UnityPpoRacingTrainer.Core.AiDriver.Training;
 using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 using Reflex.Core;
@@ -43,9 +44,20 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
             {
                 var registry = new AiDriverVersionRegistry();
                 var manifests = c.TryResolveOptional<IReadOnlyDictionary<string, VersionManifest>>();
-                if (manifests == null)
+                if (manifests == null || manifests.Count == 0)
                 {
-                    Debug.LogError("[AiDriverVersionsSystemInstaller] manifest dictionary missing — VersionManifestSystemInstaller must precede this installer.");
+                    // Consumer with no manifest infrastructure (e.g. game
+                    // project pulling the package as a UPM dep). Register a
+                    // built-in profile backed by VersionManifest's canonical
+                    // defaults — the same defaults latest.json was authored
+                    // from. Trainer projects override by registering
+                    // VersionManifestSystemInstaller with disk-loaded
+                    // manifests before this installer.
+                    Debug.Log("[AiDriverVersionsSystemInstaller] no manifests registered; registering built-in default 'latest' profile.");
+                    var builtIn = new ManifestBackedVersionProfile(
+                        new VersionManifest(),
+                        () => c.TryResolveOptional<IRewardShaper>() ?? NullRewardShaper.Instance);
+                    registry.Register("latest", builtIn);
                     return registry;
                 }
                 foreach (var kv in manifests)
@@ -102,15 +114,24 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
             builder.AddSingleton(c =>
             {
                 var profile = c.Resolve<IAiDriverVersionProfile>();
-                var registry = c.Resolve<IObservationWriterRegistry>();
+                var registry = c.TryResolveOptional<IObservationWriterRegistry>();
                 string id = profile.Manifest?.CodeModules?.ObservationWriter ?? "RacingV1";
-                if (registry.TryGet(id, out var writer)) return writer;
-                Debug.LogError(
-                    $"[AiDriverVersionsSystemInstaller] manifest references observation writer id '{id}' " +
-                    "but no IObservationWriter with that id is registered. Falling back to RacingV1.");
-                if (registry.TryGet("RacingV1", out var fallback)) return fallback;
-                throw new System.InvalidOperationException(
-                    "IObservationWriterRegistry is empty — VersionManifestSystemInstaller must precede AiDriverVersionsSystemInstaller.");
+                if (registry != null)
+                {
+                    if (registry.TryGet(id, out var writer)) return writer;
+                    if (registry.TryGet("RacingV1", out var fallback))
+                    {
+                        Debug.LogError(
+                            $"[AiDriverVersionsSystemInstaller] manifest references observation writer id '{id}' " +
+                            "but no IObservationWriter with that id is registered. Falling back to RacingV1.");
+                        return fallback;
+                    }
+                }
+                // Consumer skipped VersionManifestSystemInstaller — fall
+                // back to the canonical RacingV1 writer directly. Same
+                // instance VersionManifestSystemInstaller would seed the
+                // registry with.
+                return RacingV1ObservationWriter.Instance;
             }, typeof(IObservationWriter));
         }
 

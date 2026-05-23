@@ -26,11 +26,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
             _manifests = manifests ?? throw new System.ArgumentNullException(nameof(manifests));
         }
 
-        // Convenience overload for consumers (e.g. the game's GameBootstrap)
-        // that don't pre-load the manifest dict elsewhere — kicks off the
-        // disk + Resources fallback in VersionManifestLoader.LoadAll.
-        public VersionManifestSystemInstaller() : this(VersionManifestLoader.LoadAll()) { }
-
         public void Install(ContainerBuilder builder)
         {
             // Manifests loaded once at bootstrap; TrainerBootstrap passes the
