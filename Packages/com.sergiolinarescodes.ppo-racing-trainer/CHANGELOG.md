@@ -4,6 +4,11 @@ All notable changes to this package are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-05-24
+
+### Fixed
+- `VersionManifestLoader` now reads the package-shipped manifests directly off disk via `UnityEditor.PackageManager.PackageInfo.FindForAssembly(...).resolvedPath` in Editor builds, before falling back to `Resources.LoadAll` and per-name `Resources.Load`. We observed Unity reusing stale per-asset import state when the package version bumps — the new `Library/PackageCache/com.sergiolinarescodes.ppo-racing-trainer@<hash>/` directory contained the JSON files on disk but Unity never re-imported them into the AssetDatabase, so every Resources lookup returned null. `File.ReadAllText` doesn't care about the AssetDatabase. Editor-only; player builds still go through Resources (which depend on a clean AssetDatabase walk during the build pipeline).
+
 ## [0.1.4] - 2026-05-24
 
 ### Fixed

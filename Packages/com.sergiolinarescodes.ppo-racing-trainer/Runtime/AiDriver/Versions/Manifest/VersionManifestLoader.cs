@@ -65,6 +65,47 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
                 Debug.Log($"[VersionManifestLoader] disk folder missing at {dir}; trying package-shipped Resources.");
             }
 
+#if UNITY_EDITOR
+            // Pass 1.5 — direct file-system read from the package's resolved
+            // path. Bypasses Unity's AssetDatabase / Resources lookup, which
+            // we've observed silently skip importing the package-shipped
+            // manifests on consumer projects (e.g. when the package version
+            // bumps but Unity reuses stale per-asset import state, the new
+            // cache directory's JSONs never enter the AssetDatabase and
+            // every Resources lookup returns null). File.ReadAllText does
+            // not care about any of that. Editor-only; player builds must
+            // rely on the Resources passes below — but a successful Build
+            // necessarily walks the AssetDatabase, so any manifest missing
+            // from it would also be missing from the built player and we'd
+            // catch the gap before shipping.
+            try
+            {
+                var pkg = UnityEditor.PackageManager.PackageInfo.FindForAssembly(
+                    typeof(VersionManifestLoader).Assembly);
+                if (pkg != null)
+                {
+                    var pkgVersionsDir = Path.Combine(pkg.resolvedPath, "Runtime", "Resources", "AiDriver", "Versions");
+                    if (Directory.Exists(pkgVersionsDir))
+                    {
+                        int pickedFromPkg = 0;
+                        foreach (var path in Directory.GetFiles(pkgVersionsDir, "*.json"))
+                        {
+                            var manifest = TryLoad(path);
+                            if (manifest == null) continue;
+                            if (result.ContainsKey(manifest.VersionId)) continue;
+                            result[manifest.VersionId] = manifest;
+                            pickedFromPkg++;
+                        }
+                        Debug.Log($"[VersionManifestLoader] picked up {pickedFromPkg} manifest(s) from package path {pkgVersionsDir}.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[VersionManifestLoader] PackageInfo fallback failed: {ex.Message}");
+            }
+#endif
+
             // Pass 2 — Resources.LoadAll on the package's Resources subfolder.
             // Auto-picks up anything dropped into Runtime/Resources/AiDriver/
             // Versions/. Disk entries above always win.
