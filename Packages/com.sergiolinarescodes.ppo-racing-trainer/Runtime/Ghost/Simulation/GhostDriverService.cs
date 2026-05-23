@@ -1,4 +1,5 @@
 using UnityPpoRacingTrainer.Core.AiDriver;
+using UnityPpoRacingTrainer.Core.AiDriver.Internal;
 using UnityPpoRacingTrainer.Core.AiDriver.Loop;
 using UnityPpoRacingTrainer.Core.AiDriver.Physics;
 using UnityPpoRacingTrainer.Core.AiDriver.Policy;
@@ -102,7 +103,7 @@ namespace UnityPpoRacingTrainer.Core.Ghost.Simulation
         {
             if (_hasSpawned) return;
 
-            var prefab = Resources.Load<GameObject>(_profile.PrefabResourcePath);
+            var prefab = PackageResourceLoader.Load<GameObject>(_profile.PrefabResourcePath, ".prefab");
             if (prefab == null)
             {
                 Debug.LogError($"[GhostDriver] AiDriverAgent prefab missing at Resources/{_profile.PrefabResourcePath}.prefab (version={_profile.VersionId}).");
@@ -137,7 +138,7 @@ namespace UnityPpoRacingTrainer.Core.Ghost.Simulation
                 string resolvedPath = ResolveOnnxResourcePath(_profile.OnnxResourcePath);
                 if (!string.IsNullOrEmpty(resolvedPath))
                 {
-                    var model = Resources.Load<ModelAsset>(resolvedPath);
+                    var model = PackageResourceLoader.Load<ModelAsset>(resolvedPath, ".onnx");
                     if (model != null)
                     {
                         brain.Model = model;
