@@ -23,7 +23,7 @@ namespace UnityPpoRacingTrainer.Core.Tests.AiDriver.Policy
     {
         // -- Golden floats per frame. Bumping any of these is a BREAKING change
         //    for previously-trained ONNX. Make sure docs/observation-versioning.md
-        //    and CHANGELOG.md reflect the bump.
+        //    reflects the bump.
         private const int GoldenFloatsPerFrame = 60;
         private const int GoldenBaseObservationFloats = 25;
         private const int GoldenRaceContextFloats = 25;

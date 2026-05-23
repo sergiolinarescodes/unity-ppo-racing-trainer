@@ -28,4 +28,3 @@
 <!-- Only if reward / observation / physics changed. Otherwise delete this section. -->
 
 - [ ] Frozen previous canonical state as `Versions/V<N>/` (see `docs/snapshot-version.md`)
-- [ ] Bumped `CHANGELOG.md` under "Unreleased"

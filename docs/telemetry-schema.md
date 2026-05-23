@@ -100,7 +100,7 @@ Untouched by this project. Read it with TensorBoard. Schema is whatever ML-Agent
 ## Stability promise
 
 - **`circuit_records/records.json`** — fields above are stable to v1. New keys can be added under each circuit object without a version bump.
-- **`race_telemetry/*.json`** — fields above are stable. Anything added since v0.2.0 (see `CHANGELOG.md`) is additive; older readers parse newer files by ignoring unknown fields.
+- **`race_telemetry/*.json`** — fields above are stable. New keys are additive; older readers parse newer files by ignoring unknown fields.
 - The training subdir is owned by ML-Agents; we make no promise about it.
 
 If you need a new field, prefer adding it to one of the existing DTOs rather than introducing a parallel file. The dashboard already knows where to look.

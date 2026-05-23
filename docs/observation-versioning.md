@@ -31,8 +31,7 @@ The repo's pattern (see [`docs/snapshot-version.md`](snapshot-version.md)) is:
 
 1. Take the current `Versions/Latest/` and copy it to `Versions/V<N>/`. That snapshot keeps the old layout + the old ONNX-compatible inference path so historical models still load.
 2. Edit `Versions/Latest/RacingObservationLayout` (and the matching `EgoObservationLayout`, opponent ray writer, etc.) to the new shape.
-3. Bump `CHANGELOG.md` under `[Unreleased]` with a "BREAKING: observation layout" line.
-4. Retrain from scratch. There is no migration path — a 60-float ONNX cannot consume a 61-float observation.
+3. Retrain from scratch. There is no migration path — a 60-float ONNX cannot consume a 61-float observation.
 
 ## What counts as "changing the observation"
 
