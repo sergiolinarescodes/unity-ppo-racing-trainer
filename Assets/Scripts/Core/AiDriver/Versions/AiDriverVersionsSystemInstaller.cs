@@ -66,10 +66,30 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
             {
                 var registry = c.Resolve<AiDriverVersionRegistry>();
                 if (registry.TryGet(captured, out var profile)) return profile;
-                Debug.LogError(
-                    $"[AiDriverVersionsSystemInstaller] active version id '{captured}' not found in manifest dictionary. " +
-                    "Falling back to 'latest'. Check TrainerBootstrap.activeVersionId or drop a matching <id>.json.");
-                if (registry.TryGet("latest", out var fallback)) return fallback;
+
+                // ONNX-by-name fallback: activeVersionId can be set to the
+                // bare filename (no extension) of any *.onnx under
+                // Resources/AiDriver/Policies/ — useful for spot-checking a
+                // freshly dropped policy without authoring a manifest. The
+                // base manifest stays "latest"; only OnnxResourcePath and
+                // VersionId are swapped. See OnnxOverrideVersionProfile for
+                // the observation-shape caveat.
+                if (registry.TryGet("latest", out var fallback))
+                {
+                    string onnxResourcePath = TryResolveOnnxByName(captured);
+                    if (onnxResourcePath != null)
+                    {
+                        Debug.Log(
+                            $"[AiDriverVersionsSystemInstaller] active version id '{captured}' resolved by ONNX-name fallback " +
+                            $"→ onnxResourcePath='{onnxResourcePath}', other settings from 'latest'.");
+                        return new OnnxOverrideVersionProfile(fallback, captured, onnxResourcePath);
+                    }
+
+                    Debug.LogError(
+                        $"[AiDriverVersionsSystemInstaller] active version id '{captured}' not found in manifest dictionary and " +
+                        "no matching ONNX under Resources/AiDriver/Policies/. Falling back to 'latest'. Check TrainerBootstrap.activeVersionId.");
+                    return fallback;
+                }
                 throw new System.InvalidOperationException(
                     "AiDriverVersionRegistry is empty — manifests must exist under Assets/_Bootstrap/Configs/Versions/.");
             }, typeof(IAiDriverVersionProfile));
@@ -95,5 +115,19 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions
         }
 
         public ISystemTestFactory CreateTestFactory() => new AiDriverVersionsTestFactory();
+
+        // Editor: hit disk so a freshly added ONNX is picked up without
+        // restarting. Player: trust the name and let Resources.Load fail
+        // softly downstream if the file wasn't packaged.
+        private static string TryResolveOnnxByName(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id)) return null;
+#if UNITY_EDITOR
+            string abs = System.IO.Path.Combine(Application.dataPath, "Resources", "AiDriver", "Policies", id + ".onnx");
+            return System.IO.File.Exists(abs) ? "AiDriver/Policies/" + id : null;
+#else
+            return "AiDriver/Policies/" + id;
+#endif
+        }
     }
 }

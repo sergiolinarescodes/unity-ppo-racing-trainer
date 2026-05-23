@@ -11,7 +11,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training.Curriculum
     /// </summary>
     public static class CurriculumStages
     {
-        public const string AuthoredLibraryDir = "circuits/stage_authored_closure";
+        public const string AuthoredLibraryDir = "circuits/authored_closure";
 
         /// <summary>
         /// Canonical generation knob shared by every consumer. Piece-weight

@@ -15,7 +15,7 @@
     "circuit_1983889720": {"best_lap_seconds": 39.30005},
     "circuit_2063058044": {"best_lap_seconds": 74.80005},
     "circuit_2063058084": {"best_lap_seconds": 66.69995},
-    "circuit_0007": {"best_lap_seconds": 64.73999},
+    "circuit_0007": {"best_lap_seconds": 42.97999, "run_id": "trainer", "timestamp_utc": "2026-05-23T15:47:27.0431240Z", "writer": "csharp"},
     "circuit_992198553": {"best_lap_seconds": 73.16016},
     "circuit_2063058046": {"best_lap_seconds": 83.93994},
     "circuit_853348049": {"best_lap_seconds": 42.19995},
@@ -28,6 +28,6 @@
     "circuit_2063058069": {"best_lap_seconds": 65.09985},
     "circuit_498743335": {"best_lap_seconds": 62.5},
     "circuit_2063058094": {"best_lap_seconds": 71.6001},
-    "circuit_853348064": {"best_lap_seconds": 62.45996, "run_id": "v1-20260522-1943", "timestamp_utc": "2026-05-22T18:31:59.2501712Z", "writer": "csharp"}
+    "circuit_853348064": {"best_lap_seconds": 62.45996}
   }
 }

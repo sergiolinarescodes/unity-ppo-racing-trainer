@@ -19,10 +19,20 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
     /// </summary>
     public sealed class VersionManifestSystemInstaller : ISystemInstaller
     {
+        private readonly IReadOnlyDictionary<string, VersionManifest> _manifests;
+
+        public VersionManifestSystemInstaller(IReadOnlyDictionary<string, VersionManifest> manifests)
+        {
+            _manifests = manifests ?? throw new System.ArgumentNullException(nameof(manifests));
+        }
+
         public void Install(ContainerBuilder builder)
         {
-            // Manifests loaded once at bootstrap. Keyed by version_id string.
-            builder.AddSingleton(_ => VersionManifestLoader.LoadAll(),
+            // Manifests loaded once at bootstrap; TrainerBootstrap passes the
+            // dict in so this installer + TrainingSettingsService + the
+            // requiresSideSystems decision all share one disk read.
+            var captured = _manifests;
+            builder.AddSingleton(_ => captured,
                 typeof(IReadOnlyDictionary<string, VersionManifest>));
 
             // Reward channel registry — empty by default. New IRewardChannel

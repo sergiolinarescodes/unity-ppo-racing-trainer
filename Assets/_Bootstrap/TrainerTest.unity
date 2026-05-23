@@ -302,10 +302,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: UnityPpoRacingTrainer.Core::UnityPpoRacingTrainer.Core.Bootstrap.TrainerBootstrap
   terrainWidth: 100
   terrainDepth: 100
-  activeVersion: 100
+  activeVersionId: latest
   agentCount: 1
-  stageOverride: 0
-  forceCircuitId: circuit_1408150785
+  forceCircuitId: 
+  pinFirstCircuit: 1
 --- !u!1 &461659954
 GameObject:
   m_ObjectHideFlags: 0

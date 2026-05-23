@@ -14,6 +14,17 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Physics
 
         CarId Spawn(Vector3 position, float heading, CarParameters parameters);
 
+        /// <summary>
+        /// Re-create an entry for an existing <paramref name="id"/> that was
+        /// previously despawned (e.g. eliminated in race-scoped mode). Used
+        /// by the policy service when ML-Agents reopens an episode for a car
+        /// that's no longer in <see cref="ActiveCars"/> — a plain
+        /// <see cref="TeleportTo"/> would no-op because the entry's gone.
+        /// Publishes <c>CarSpawnedEvent</c> so the race coordinator transitions
+        /// out of <c>Ended</c> and opens a fresh race window.
+        /// </summary>
+        void RespawnExisting(CarId id, Vector3 position, float heading, CarParameters parameters);
+
         void Despawn(CarId id);
 
         void SetInput(CarId id, DriverInput input);

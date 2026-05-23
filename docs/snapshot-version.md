@@ -42,7 +42,11 @@ public CarParameters PhysicsDefaults => V2PhysicsProfile.PhysicsDefaults;
 
 Editor-side steps:
 - Duplicate `Assets/Resources/AiDriver/AiDriverAgent.prefab` → `Assets/Resources/AiDriver/Legacy/AiDriverAgentV2.prefab`. Set its `BehaviorParameters.BehaviorName` to `RacingDriverV2`.
-- Copy the trained ONNX you want to freeze to `Assets/Resources/AiDriver/Policies/RacingDriver-v2.onnx`.
+- Freeze the trained ONNX as the snapshot's pinned weights:
+  ```
+  python tools/snapshot_policy_onnx.py --version v2
+  ```
+  This picks the freshest non-baseline `RacingDriver-*.onnx` from `Assets/Resources/AiDriver/Policies/`, copies it to `RacingDriver-v2.onnx`, and prunes any orphaned step-numbered checkpoints (`RacingDriver-<digits>.onnx`) so the folder stays at one ONNX per snapshot + the rolling `RacingDriver.onnx` + `RacingDriver-baseline.onnx`. Run with `--dry-run` first if you want to preview, or `--source <name>` to freeze a specific file. Re-runs overwrite the snapshot file in place — Unity keeps the existing `.meta` GUID, so prefab refs survive a re-freeze.
 - Duplicate the active yaml to `Assets/_Bootstrap/Configs/MlAgents/racing_driver_v2.yaml`; update `behaviors:` to key on `RacingDriverV2`.
 
 ### 4. Register in the installer

@@ -2,7 +2,7 @@
 
 PPO neural-network car racing agents in Unity. Multi-agent self-play across an authored circuit library, tire degradation, draft physics, race-scoped 3-lap episodes, and a Python dashboard for live training stats, race telemetry, and in-browser settings editing.
 
-<!-- [GIF: agent learning to corner — placeholder] -->
+![Agent learning to corner](readme.gif)
 
 ---
 

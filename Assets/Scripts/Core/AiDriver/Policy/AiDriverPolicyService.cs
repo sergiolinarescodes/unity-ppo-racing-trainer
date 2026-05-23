@@ -153,7 +153,19 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Policy
             (float lateral, float back) = ComputeSpawnOffset(rec.GridSlot, rec.Rng);
             ApplyGridOffset(lateral, back, loopRef, baseAnchorIdx, ref spawnPos, ref spawnHeading);
 
-            _carSim.TeleportTo(carId, spawnPos, spawnHeading);
+            // Race-scoped elimination despawns the car (EpisodeRunner.ResolveDriverEliminated)
+            // so its entry is gone by the time ML-Agents reopens the episode here.
+            // Re-create the entry with the same CarId — RespawnExisting also
+            // publishes CarSpawnedEvent so the race coordinator can transition
+            // out of Ended and start a fresh race window.
+            if (!_carSim.TryGetState(carId, out _))
+            {
+                _carSim.RespawnExisting(carId, spawnPos, spawnHeading, rec.Profile.Car);
+            }
+            else
+            {
+                _carSim.TeleportTo(carId, spawnPos, spawnHeading);
+            }
             _agents[carId] = rec with
             {
                 PrevHeading = spawnHeading,

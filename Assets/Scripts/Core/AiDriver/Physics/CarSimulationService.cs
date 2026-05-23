@@ -88,6 +88,29 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Physics
             return id;
         }
 
+        public void RespawnExisting(CarId id, Vector3 position, float heading, CarParameters parameters)
+        {
+            if (_entries.ContainsKey(id)) return;
+            _entries[id] = new Entry
+            {
+                Parameters = parameters,
+                State = new CarState
+                {
+                    Position = position,
+                    Heading = heading,
+                    BoostBudget = 1f,
+                    OnGround = true,
+                    LastAnchorIndex = -1
+                },
+                Input = default,
+                WasOffTrack = false,
+                LastSurface = SurfaceKind.Asphalt,
+                WasOnKerb = false,
+                Health = 1f
+            };
+            Publish(new CarSpawnedEvent(id, position, heading));
+        }
+
         public void Despawn(CarId id)
         {
             if (_entries.Remove(id))

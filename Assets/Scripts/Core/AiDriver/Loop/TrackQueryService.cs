@@ -511,23 +511,6 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Loop
             int longestIdx = 0;
             for (int i = 1; i < chains.Count; i++)
                 if (chains[i].Length > chains[longestIdx].Length) longestIdx = i;
-            // Diagnostic — log on every rebuild so the user can see whether
-            // U-curves contributed anchors to the picked chain.
-            {
-                var sb = new System.Text.StringBuilder();
-                for (int i = 0; i < chains.Count; i++)
-                {
-                    if (i > 0) sb.Append(", ");
-                    sb.Append('[').Append(i).Append("]=").Append(chains[i].Length);
-                    if (i == longestIdx) sb.Append("*");
-                }
-                var picked = chains[longestIdx];
-                var first = picked[0].WorldPos;
-                var last = picked[picked.Length - 1].WorldPos;
-                UnityEngine.Debug.Log(
-                    $"[TrackQuery] chains={chains.Count} {sb} pieces={_placement.Placed.Count} " +
-                    $"firstAnchor=({first.x:0.0},{first.z:0.0}) lastAnchor=({last.x:0.0},{last.z:0.0})");
-            }
             var anchors = chains[longestIdx];
             int n = anchors.Length;
             if (n < 2) return;

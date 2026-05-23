@@ -31,6 +31,16 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training.Generation
         /// </summary>
         public string ForcedCircuitId { get; set; }
 
+        /// <summary>
+        /// Editor-inference convenience: after the FIRST successful random
+        /// pick, latch that circuit's id into <see cref="ForcedCircuitId"/>
+        /// so every subsequent Generate call replays the same loop. Useful
+        /// when you want to "trainer-test" without rotating circuits but
+        /// don't want to pick a specific id up front. Ignored when
+        /// <c>ForcedCircuitId</c> is already set.
+        /// </summary>
+        public bool PinFirstSuccess { get; set; }
+
         public CurriculumGeneratorSelector(
             ShapeBasedLoopGenerator shapeBased,
             ITrackPlacementService placement,
@@ -119,6 +129,11 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Training.Generation
                 Debug.Log($"[CurriculumSelector] circuit={circuitName} pieces={placed} length={closed.TotalLength:F1}");
                 TrainingTelemetryContext.LastCircuitId = circuitName;
                 TrainingTelemetry.EmitCircuitChange(circuitName, placed, closed.TotalLength);
+                if (PinFirstSuccess && string.IsNullOrEmpty(ForcedCircuitId))
+                {
+                    ForcedCircuitId = circuitName;
+                    Debug.Log($"[CurriculumSelector] PinFirstSuccess latched ForcedCircuitId='{circuitName}'.");
+                }
                 return GenerationResult.Ok(closed.Id, placed, closed.TotalLength);
             }
 

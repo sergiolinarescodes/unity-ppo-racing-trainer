@@ -70,8 +70,11 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
         }
 
         [Header("Editor inference overrides")]
-        [Tooltip("Force a specific circuit by its 8-char id (e.g. \"08c66d8e\"). Empty = random from the authored-closure library.")]
+        [Tooltip("Force a specific circuit. Dropdown is populated from circuits/authored_closure/*.json at edit time. Empty (\"<random>\") = random pick at runtime.")]
+        [UnityPpoRacingTrainer.Core.AiDriver.Training.Curriculum.ForceCircuitId]
         [SerializeField] private string forceCircuitId = string.Empty;
+        [Tooltip("After the first random pick, latch that circuit and replay it on every episode. Skip circuit rotation during trainer-test without picking a specific id up front. Ignored when Force Circuit Id is set.")]
+        [SerializeField] private bool pinFirstCircuit = true;
 
 #if AIDRIVER_TRAINING
         private LoopAsciiLogger _loopAsciiLogger;
@@ -79,6 +82,12 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
 
         protected override void RegisterInstallers(List<ISystemInstaller> installers)
         {
+            // Manifests loaded ONCE here and threaded into every consumer:
+            // TrainingSettingsSystemInstaller, VersionManifestSystemInstaller,
+            // and the requiresSideSystems decision below. Three previous
+            // independent disk reads collapsed into one.
+            var manifests = VersionManifestLoader.LoadAll();
+
             // TrainingSettings goes FIRST so every downstream service can
             // resolve ITrainingSettingsService in its ctor. Projects the
             // <activeVersionId>.json manifest under Assets/_Bootstrap/Configs/
@@ -86,7 +95,7 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
             // baked defaults when missing/malformed. Same id is passed to
             // AiDriverVersionsSystemInstaller below so reward + physics +
             // policy all draw from one manifest.
-            installers.Add(new UnityPpoRacingTrainer.Core.AiDriver.Config.TrainingSettingsSystemInstaller(activeVersionId));
+            installers.Add(new UnityPpoRacingTrainer.Core.AiDriver.Config.TrainingSettingsSystemInstaller(activeVersionId, manifests));
             installers.Add(new GridSystemInstaller());
             installers.Add(new TerrainSystemInstaller());
             // GhostPresentation registers IDropFromAirAnimator, required by
@@ -97,26 +106,23 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
             installers.Add(new RealisticTrackGenerationSystemInstaller());
             installers.Add(new AiDriverLoopSystemInstaller());
             installers.Add(new AiDriverPhysicsSystemInstaller());
-            // Manifest infra: loads Assets/_Bootstrap/Configs/Versions/*.json
-            // into a dict, seeds the strategy registries (RewardChannel,
-            // ObservationWriter, PhysicsModel), and binds the canonical
-            // RacingV1 observation writer. AiDriverVersionsSystemInstaller
-            // below registers one ManifestBackedVersionProfile per manifest
-            // file and resolves the active IAiDriverVersionProfile by the
-            // activeVersionId string. Adding a new version = drop a new
-            // <id>.json — no enum bump, no new C# class.
-            installers.Add(new UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest.VersionManifestSystemInstaller());
+            // Manifest infra: registers the preloaded manifest dict, seeds the
+            // strategy registries (RewardChannel, ObservationWriter,
+            // PhysicsModel), and binds the canonical RacingV1 observation
+            // writer. AiDriverVersionsSystemInstaller below registers one
+            // ManifestBackedVersionProfile per manifest file and resolves the
+            // active IAiDriverVersionProfile by the activeVersionId string.
+            // Adding a new version = drop a new <id>.json — no enum bump, no
+            // new C# class.
+            installers.Add(new UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest.VersionManifestSystemInstaller(manifests));
             // Versions infra goes BEFORE AiDriverPolicySystemInstaller so
             // the policy service can resolve IAiDriverVersionProfile in ctor.
             installers.Add(new AiDriverVersionsSystemInstaller(activeVersionId));
             // Latest requires the full tire/fuel/draft/collision/race-state
-            // stack. Profile carries this via RequiresSideSystems but the
-            // installer list is built before any container exists, so we
-            // read the active manifest synchronously here — same source the
-            // resolved profile will report at line 179 via OnContainerReady.
+            // stack. Profile carries this via RequiresSideSystems; we read
+            // from the already-loaded manifest dict (no second disk read).
             // Falls back to true (full stack) when the manifest is missing.
-            var manifestsForInstall = VersionManifestLoader.LoadAll();
-            bool requiresSideSystems = manifestsForInstall.TryGetValue(activeVersionId, out var activeManifest)
+            bool requiresSideSystems = manifests.TryGetValue(activeVersionId, out var activeManifest)
                 ? activeManifest.Runtime.RequiresSideSystems
                 : true;
             if (requiresSideSystems)
@@ -213,12 +219,25 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
             // episode end — otherwise the director rebuilds the loop on the
             // next OnEpisodeEnded and the selector replays the same id but
             // re-clears placement, flickering the scene unnecessarily.
-            bool circuitPinned = !string.IsNullOrWhiteSpace(forceCircuitId);
+            //
+            // pinFirstCircuit (default ON in trainer scene) auto-latches the
+            // first random pick if Force Circuit Id is empty — same regen
+            // disable, no need to pick an id up front.
+            bool explicitPin = !string.IsNullOrWhiteSpace(forceCircuitId);
+            bool circuitPinned = explicitPin || pinFirstCircuit;
             if (circuitPinned)
             {
                 var selector = container.Resolve<AiDriver.Training.Generation.CurriculumGeneratorSelector>();
-                selector.ForcedCircuitId = forceCircuitId.Trim();
-                Debug.Log($"[TrainerBootstrap] forceCircuitId='{selector.ForcedCircuitId}'");
+                if (explicitPin)
+                {
+                    selector.ForcedCircuitId = forceCircuitId.Trim();
+                    Debug.Log($"[TrainerBootstrap] forceCircuitId='{selector.ForcedCircuitId}'");
+                }
+                else
+                {
+                    selector.PinFirstSuccess = true;
+                    Debug.Log("[TrainerBootstrap] pinFirstCircuit=true — circuit will latch after first random pick.");
+                }
             }
 
             // ASCII dump of every closed loop → results/loop_dumps.log.
@@ -932,10 +951,7 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
 
         private void Start()
         {
-            // LogError (not LogWarning) so the trainer's unbuffered stderr
-            // stream surfaces this. Without it, headless Unity buffers
-            // stdout/Player log lines and we can't tell whether Start ran.
-            Debug.LogError("[MemoryProbe] Start invoked");
+            Debug.Log("[MemoryProbe] Start invoked");
             try
             {
                 string projectRoot = ResolveProjectRoot();
@@ -958,7 +974,7 @@ namespace UnityPpoRacingTrainer.Core.Bootstrap
                         System.IO.FileAccess.Write,
                         System.IO.FileShare.Read))
                 { AutoFlush = true };
-                Debug.LogError($"[MemoryProbe] opened {_filePath}");
+                Debug.Log($"[MemoryProbe] opened {_filePath}");
             }
             catch (Exception e)
             {

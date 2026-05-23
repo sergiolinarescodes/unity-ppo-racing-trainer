@@ -158,8 +158,9 @@ namespace UnityPpoRacingTrainer.Core.Tests.AiDriver.Versions.Manifest
         [Test]
         public void TrainingSettingsService_Projects_ActiveVersion()
         {
-            var svcLatest = new TrainingSettingsService("latest");
-            var svcV1 = new TrainingSettingsService("v1");
+            var all = VersionManifestLoader.LoadAll();
+            var svcLatest = new TrainingSettingsService("latest", all);
+            var svcV1 = new TrainingSettingsService("v1", all);
 
             Assert.That(svcLatest.Current.RewardShaper, Is.EqualTo(_latest.RewardShaper),
                 "TrainingSettingsService('latest').RewardShaper != latest.json's rewardShaper.");
@@ -179,7 +180,7 @@ namespace UnityPpoRacingTrainer.Core.Tests.AiDriver.Versions.Manifest
         [Test]
         public void TrainingSettingsService_Freezes_Observation_To_BakedDefaults()
         {
-            var svc = new TrainingSettingsService("latest");
+            var svc = new TrainingSettingsService("latest", VersionManifestLoader.LoadAll());
             Assert.That(svc.Current.Observation, Is.EqualTo(new ObservationSettings()),
                 "TrainingSettingsService.Current.Observation must equal new ObservationSettings(). " +
                 "If this fails, the projection is leaking manifest values into the runtime obs section.");

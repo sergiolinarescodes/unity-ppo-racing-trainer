@@ -4,6 +4,7 @@ using System.Linq;
 using Reflex.Core;
 using Unidad.Core.Bootstrap;
 using Unidad.Core.Testing;
+using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 
 namespace UnityPpoRacingTrainer.Core.AiDriver.Config
 {
@@ -21,16 +22,21 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Config
     public sealed class TrainingSettingsSystemInstaller : ISystemInstaller
     {
         private readonly string _activeVersionId;
+        private readonly IReadOnlyDictionary<string, VersionManifest> _manifests;
 
-        public TrainingSettingsSystemInstaller(string activeVersionId)
+        public TrainingSettingsSystemInstaller(
+            string activeVersionId,
+            IReadOnlyDictionary<string, VersionManifest> manifests)
         {
             _activeVersionId = string.IsNullOrEmpty(activeVersionId) ? "latest" : activeVersionId;
+            _manifests = manifests ?? throw new ArgumentNullException(nameof(manifests));
         }
 
         public void Install(ContainerBuilder builder)
         {
-            var captured = _activeVersionId;
-            builder.AddSingleton(_ => new TrainingSettingsService(captured),
+            var capturedId = _activeVersionId;
+            var capturedManifests = _manifests;
+            builder.AddSingleton(_ => new TrainingSettingsService(capturedId, capturedManifests),
                 typeof(TrainingSettingsService), typeof(ITrainingSettingsService));
         }
 

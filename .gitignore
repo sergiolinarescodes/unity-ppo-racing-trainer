@@ -28,6 +28,7 @@
 
 # Build artifacts
 Build/AiDriverTrainer/
+artifacts/
 
 # Training output
 results/

@@ -82,6 +82,7 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Physics.CarCollision.Scenarios
             }
 
             public CarId Spawn(Vector3 position, float heading, CarParameters parameters) => default;
+            public void RespawnExisting(CarId id, Vector3 position, float heading, CarParameters parameters) { _states[id] = new CarState { Position = position, Heading = heading, OnGround = true }; _params[id] = parameters; }
             public void Despawn(CarId id) { _states.Remove(id); _params.Remove(id); }
             public void SetInput(CarId id, DriverInput input) { }
             public bool TryGetState(CarId id, out CarState state) => _states.TryGetValue(id, out state);

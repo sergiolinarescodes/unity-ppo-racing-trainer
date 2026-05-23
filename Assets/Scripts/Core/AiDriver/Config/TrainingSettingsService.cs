@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest;
 
@@ -22,25 +23,50 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Config
     internal sealed class TrainingSettingsService : ITrainingSettingsService
     {
         private readonly string _activeVersionId;
+        private readonly IReadOnlyDictionary<string, VersionManifest> _manifests;
         private TrainingSettings _current;
 
-        public TrainingSettingsService(string activeVersionId)
+        public TrainingSettingsService(
+            string activeVersionId,
+            IReadOnlyDictionary<string, VersionManifest> manifests)
         {
             _activeVersionId = string.IsNullOrEmpty(activeVersionId) ? "latest" : activeVersionId;
-            _current = LoadFromManifest(_activeVersionId);
+            _manifests = manifests ?? throw new ArgumentNullException(nameof(manifests));
+            _current = LoadFromManifest(_activeVersionId, _manifests);
         }
 
         public TrainingSettings Current => _current;
 
-        public void Reload() => _current = LoadFromManifest(_activeVersionId);
+        // Reload re-hits disk on purpose: the dashboard "reload" affordance
+        // needs to pick up manifest edits made while the editor is running.
+        // The injected dict captured at construction is the bootstrap-time
+        // snapshot; Reload bypasses it.
+        public void Reload() => _current = LoadFromManifest(_activeVersionId, VersionManifestLoader.LoadAll());
 
-        private static TrainingSettings LoadFromManifest(string activeVersionId)
+        private static TrainingSettings LoadFromManifest(
+            string activeVersionId,
+            IReadOnlyDictionary<string, VersionManifest> manifests)
         {
-            var manifests = VersionManifestLoader.LoadAll();
+            // Try the requested id first. Mirrors the ONNX-by-name fallback in
+            // AiDriverVersionsSystemInstaller: if the id doesn't match a
+            // manifest, fall back to 'latest' (the same profile the version
+            // resolver lands on) before going all the way to baked defaults.
+            // Otherwise an ONNX-only override yields physics-profile inconsistency:
+            // the agent runs latest's physics while TirePhysicsService reads
+            // C# defaults.
             if (!manifests.TryGetValue(activeVersionId, out var m))
             {
-                Debug.LogWarning($"[TrainingSettings] manifest '{activeVersionId}' not found under {VersionManifestLoader.DefaultRelativeFolder}; using baked defaults.");
-                return new TrainingSettings();
+                if (!string.Equals(activeVersionId, "latest", System.StringComparison.OrdinalIgnoreCase)
+                    && manifests.TryGetValue("latest", out var latest))
+                {
+                    Debug.LogWarning($"[TrainingSettings] manifest '{activeVersionId}' not found; falling back to 'latest' to stay consistent with the version profile fallback.");
+                    m = latest;
+                }
+                else
+                {
+                    Debug.LogWarning($"[TrainingSettings] manifest '{activeVersionId}' not found under {VersionManifestLoader.DefaultRelativeFolder}; using baked defaults.");
+                    return new TrainingSettings();
+                }
             }
             // Observation section is frozen per ONNX checkpoint — bake the
             // C# defaults rather than projecting the manifest's values, so a
