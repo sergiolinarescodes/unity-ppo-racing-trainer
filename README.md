@@ -6,14 +6,6 @@ PPO neural-network car racing agents in Unity. Multi-agent self-play across an a
 
 ---
 
-## Demo
-
-<!-- [3 GIFs: random policy / mid-training corner attack / fully-trained pack race — placeholders] -->
-
-*GIFs will be added showing training progression.*
-
----
-
 ## Stack
 
 - **Unity 6 LTS** (6000.4.0f1) — headless build target
