@@ -1,0 +1,2 @@
+# Trainer scratch directory
+Supervisor copies trained .onnx here after each run. Trainer scans this path for the 'latest' sentinel.

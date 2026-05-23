@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "com.sergiolinarescodes.ppo-racing-trainer": "file:com.sergiolinarescodes.ppo-racing-trainer",
     "com.gustavopsantos.reflex": "https://github.com/gustavopsantos/reflex.git?path=/Assets/Reflex/#13.0.3",
     "com.unidad.core": "file:com.unidad.core",
     "com.unity.ai.navigation": "2.0.11",

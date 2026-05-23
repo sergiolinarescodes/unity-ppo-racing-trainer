@@ -1,0 +1,19 @@
+{
+    "name": "AiDriverTrainer.Editor",
+    "rootNamespace": "UnityPpoRacingTrainer.Core.AiDriver.Editor",
+    "references": [
+        "SergioLinaresCodes.PpoRacingTrainer",
+        "SergioLinaresCodes.PpoRacingTrainer.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

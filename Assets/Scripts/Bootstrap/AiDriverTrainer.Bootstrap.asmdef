@@ -1,0 +1,23 @@
+{
+    "name": "AiDriverTrainer.Bootstrap",
+    "rootNamespace": "UnityPpoRacingTrainer.Core.Bootstrap",
+    "references": [
+        "SergioLinaresCodes.PpoRacingTrainer",
+        "Reflex",
+        "Unidad.Core.Runtime",
+        "Unity.ML-Agents",
+        "Unity.InferenceEngine",
+        "Unity.Burst",
+        "Unity.Collections",
+        "Unity.Mathematics"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
