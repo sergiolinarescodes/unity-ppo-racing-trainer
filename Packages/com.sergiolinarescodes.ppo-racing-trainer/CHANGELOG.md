@@ -4,6 +4,11 @@ All notable changes to this package are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-05-24
+
+### Fixed
+- `VersionManifestLoader` now falls back to direct `Resources.Load<TextAsset>("AiDriver/Versions/<id>")` calls for known shipped manifest ids (`latest`, `v1`) when `Resources.LoadAll` on the package-shipped subfolder returns empty. In v0.1.3 the loader logged "trying package-shipped Resources" but `LoadAll` returned 0 TextAssets even though Unity's `TextScriptImporter` had successfully imported both JSON files — a Unity 6 quirk with `Resources.LoadAll` on subfolders inside a package's `Resources/` tree. By-name `Resources.Load` is unaffected. Adding a new packaged version means appending its id to `PackagedVersionIds` in `VersionManifestLoader`.
+
 ## [0.1.3] - 2026-05-24
 
 ### Fixed

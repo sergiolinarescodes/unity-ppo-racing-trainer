@@ -30,6 +30,15 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
         public const string DefaultRelativeFolder = "Assets/_Bootstrap/Configs/Versions";
         public const string DefaultResourcesPath = "AiDriver/Versions";
 
+        // Per-name fallback list. Resources.LoadAll on a folder inside a
+        // package's Resources/ tree is unreliable when the package is fetched
+        // as a git URL (Unity imports the TextAssets but LoadAll on the
+        // subfolder returns empty). Direct Resources.Load by name always
+        // works once the asset is imported. Add any new id shipped under
+        // Runtime/Resources/AiDriver/Versions/ here so it survives the
+        // LoadAll quirk on consumer projects.
+        private static readonly string[] PackagedVersionIds = { "latest", "v1" };
+
         public static IReadOnlyDictionary<string, VersionManifest> LoadAll(string folder = null)
         {
             var result = new Dictionary<string, VersionManifest>(StringComparer.OrdinalIgnoreCase);
@@ -56,12 +65,12 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
                 Debug.Log($"[VersionManifestLoader] disk folder missing at {dir}; trying package-shipped Resources.");
             }
 
-            // Pass 2 — Resources fallback. Consumer projects with no on-disk
-            // Versions folder still pick up the canonical manifests baked
-            // into the package. Disk entries above always win.
+            // Pass 2 — Resources.LoadAll on the package's Resources subfolder.
+            // Auto-picks up anything dropped into Runtime/Resources/AiDriver/
+            // Versions/. Disk entries above always win.
             int beforeResources = result.Count;
             var assets = Resources.LoadAll<TextAsset>(DefaultResourcesPath);
-            int picked = 0;
+            int pickedLoadAll = 0;
             foreach (var ta in assets)
             {
                 if (ta == null || string.IsNullOrEmpty(ta.text)) continue;
@@ -69,13 +78,37 @@ namespace UnityPpoRacingTrainer.Core.AiDriver.Versions.Manifest
                 if (manifest == null) continue;
                 if (result.ContainsKey(manifest.VersionId)) continue;
                 result[manifest.VersionId] = manifest;
-                picked++;
+                pickedLoadAll++;
             }
-            if (assets.Length > 0)
+            Debug.Log($"[VersionManifestLoader] Resources.LoadAll returned {assets.Length} TextAsset(s), kept {pickedLoadAll}.");
+
+            // Pass 3 — per-name fallback. Resources.LoadAll on a subfolder of
+            // a package-shipped Resources/ tree returns an empty array in
+            // some Unity 6 configurations even though TextScriptImporter
+            // successfully imported the files. Direct Resources.Load by name
+            // works in every case once the asset is imported.
+            int pickedByName = 0;
+            foreach (var id in PackagedVersionIds)
             {
-                Debug.Log($"[VersionManifestLoader] picked {picked} additional manifest(s) from Resources/{DefaultResourcesPath} (disk had {beforeResources}).");
+                if (result.ContainsKey(id)) continue;
+                var ta = Resources.Load<TextAsset>($"{DefaultResourcesPath}/{id}");
+                if (ta == null || string.IsNullOrEmpty(ta.text))
+                {
+                    Debug.LogWarning($"[VersionManifestLoader] direct Resources.Load failed for {DefaultResourcesPath}/{id}.json — package may not be imported yet.");
+                    continue;
+                }
+                var manifest = TryParse(ta.text, $"Resources/{DefaultResourcesPath}/{id}.json");
+                if (manifest == null) continue;
+                if (result.ContainsKey(manifest.VersionId)) continue;
+                result[manifest.VersionId] = manifest;
+                pickedByName++;
+            }
+            if (pickedByName > 0)
+            {
+                Debug.Log($"[VersionManifestLoader] by-name fallback picked up {pickedByName} additional manifest(s).");
             }
 
+            Debug.Log($"[VersionManifestLoader] final manifest count = {result.Count} (disk had {beforeResources}).");
             return result;
         }
 
