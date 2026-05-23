@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using UnityPpoRacingTrainer.Core.AiDriver.Loop;
 using UnityPpoRacingTrainer.Core.AiDriver.Physics;
 using UnityPpoRacingTrainer.Core.AiDriver.Policy;
-using UnityPpoRacingTrainer.Core.Bootstrap;
 using UnityPpoRacingTrainer.Core.Ghost.Simulation;
 using UnityPpoRacingTrainer.Core.Track;
 using Reflex.Core;
