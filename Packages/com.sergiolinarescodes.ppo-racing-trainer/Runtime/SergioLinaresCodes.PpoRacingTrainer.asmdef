@@ -1,12 +1,17 @@
 {
-    "name": "UnityPpoRacingTrainer.Core.AiDriver.Editor",
+    "name": "SergioLinaresCodes.PpoRacingTrainer",
     "rootNamespace": "UnityPpoRacingTrainer",
     "references": [
-        "UnityPpoRacingTrainer.Core"
+        "Reflex",
+        "Unidad.Core.Runtime",
+        "Unity.InputSystem",
+        "Unity.ML-Agents",
+        "Unity.InferenceEngine",
+        "Unity.Burst",
+        "Unity.Collections",
+        "Unity.Mathematics"
     ],
-    "includePlatforms": [
-        "Editor"
-    ],
+    "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,

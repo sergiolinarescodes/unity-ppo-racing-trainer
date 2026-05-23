@@ -1,10 +1,10 @@
 {
-    "name": "UnityPpoRacingTrainer.Core",
-    "rootNamespace": "UnityPpoRacingTrainer",
+    "name": "AiDriverTrainer.Bootstrap",
+    "rootNamespace": "UnityPpoRacingTrainer.Core.Bootstrap",
     "references": [
+        "SergioLinaresCodes.PpoRacingTrainer",
         "Reflex",
         "Unidad.Core.Runtime",
-        "Unity.InputSystem",
         "Unity.ML-Agents",
         "Unity.InferenceEngine",
         "Unity.Burst",

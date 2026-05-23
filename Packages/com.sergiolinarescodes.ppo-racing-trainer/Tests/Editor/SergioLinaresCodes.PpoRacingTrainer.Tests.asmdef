@@ -1,8 +1,8 @@
 {
-    "name": "UnityPpoRacingTrainer.Core.Tests",
+    "name": "SergioLinaresCodes.PpoRacingTrainer.Tests",
     "rootNamespace": "UnityPpoRacingTrainer.Core.Tests",
     "references": [
-        "UnityPpoRacingTrainer.Core",
+        "SergioLinaresCodes.PpoRacingTrainer",
         "Unidad.Core.Runtime",
         "Unity.ML-Agents",
         "Unity.InferenceEngine",

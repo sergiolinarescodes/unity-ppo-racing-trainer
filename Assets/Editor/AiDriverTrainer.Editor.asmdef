@@ -1,8 +1,9 @@
 {
-    "name": "UnityPpoRacingTrainer.Core.Editor",
-    "rootNamespace": "UnityPpoRacingTrainer",
+    "name": "AiDriverTrainer.Editor",
+    "rootNamespace": "UnityPpoRacingTrainer.Core.AiDriver.Editor",
     "references": [
-        "UnityPpoRacingTrainer.Core"
+        "SergioLinaresCodes.PpoRacingTrainer",
+        "SergioLinaresCodes.PpoRacingTrainer.Editor"
     ],
     "includePlatforms": [
         "Editor"
