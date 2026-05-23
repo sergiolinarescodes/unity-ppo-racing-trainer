@@ -150,10 +150,22 @@ namespace UnityPpoRacingTrainer.Core.Ghost.Simulation
                     }
                 }
 
-                // Main scene has no Python trainer attached — force inference.
-                // Without this, BehaviorType.Default falls back to Heuristic()
-                // (which is pure-pursuit on the policy service, NOT what we want).
-                brain.BehaviorType = BehaviorType.InferenceOnly;
+                // Main scene has no Python trainer attached — force inference
+                // when we have a model. Default falls back to Heuristic()
+                // (pure-pursuit on the policy service) which is NOT what we
+                // want when a model is available. When brain.Model is still
+                // null (load failed, prefab has no serialized m_Model), keep
+                // BehaviorType.Default so ML-Agents drops into Heuristic
+                // instead of throwing 'Can't use Behavior Type InferenceOnly
+                // without a model.'
+                if (brain.Model != null)
+                {
+                    brain.BehaviorType = BehaviorType.InferenceOnly;
+                }
+                else
+                {
+                    Debug.LogWarning($"[GhostDriver] No ONNX model resolved (version={_profile.VersionId}) — leaving BehaviorType=Default so Heuristic policy runs instead of throwing.");
+                }
 
                 // Sample from the Gaussian (default) instead of using the
                 // deterministic mean. The PPO policy was trained with action
@@ -357,6 +369,13 @@ namespace UnityPpoRacingTrainer.Core.Ghost.Simulation
         // under Resources/AiDriver/Policies (Editor only); mtime is the tiebreak so a
         // freshly trained variant of the same version wins over older checkpoints.
         // Built players fall back to prefab m_Model.
+        // Package-shipped baseline ONNX. Fallback when the trainer's live
+        // training output dir is empty (consumer projects, no training
+        // running). Matches the file at
+        // Packages/com.sergiolinarescodes.ppo-racing-trainer/Runtime/
+        // Resources/AiDriver/Policies/RacingDriver-baseline.onnx.
+        private const string BaselineOnnxResourcePath = "AiDriver/Policies/RacingDriver-baseline";
+
         // Mirror of TrainerBootstrap.ResolveOnnxResourcePath — keep both in sync.
         private static string ResolveOnnxResourcePath(string profilePath)
         {
@@ -364,27 +383,31 @@ namespace UnityPpoRacingTrainer.Core.Ghost.Simulation
                 return profilePath;
 #if UNITY_EDITOR
             var dir = new System.IO.DirectoryInfo("Assets/Resources/AiDriver/Policies");
-            if (!dir.Exists) return null;
-            System.IO.FileInfo best = null;
-            (int major, int minor) bestVer = (-1, -1);
-            foreach (var f in dir.GetFiles("RacingDriver-*.onnx"))
+            if (dir.Exists)
             {
-                var ver = ParseVersionSuffix(f.Name);
-                if (best == null
-                    || ver.major > bestVer.major
-                    || (ver.major == bestVer.major && ver.minor > bestVer.minor)
-                    || (ver.major == bestVer.major && ver.minor == bestVer.minor
-                        && f.LastWriteTimeUtc > best.LastWriteTimeUtc))
+                System.IO.FileInfo best = null;
+                (int major, int minor) bestVer = (-1, -1);
+                foreach (var f in dir.GetFiles("RacingDriver-*.onnx"))
                 {
-                    best = f;
-                    bestVer = ver;
+                    var ver = ParseVersionSuffix(f.Name);
+                    if (best == null
+                        || ver.major > bestVer.major
+                        || (ver.major == bestVer.major && ver.minor > bestVer.minor)
+                        || (ver.major == bestVer.major && ver.minor == bestVer.minor
+                            && f.LastWriteTimeUtc > best.LastWriteTimeUtc))
+                    {
+                        best = f;
+                        bestVer = ver;
+                    }
                 }
+                if (best != null)
+                    return "AiDriver/Policies/" + System.IO.Path.GetFileNameWithoutExtension(best.Name);
             }
-            if (best == null) return null;
-            return "AiDriver/Policies/" + System.IO.Path.GetFileNameWithoutExtension(best.Name);
-#else
-            return null;
 #endif
+            // Consumer project with no live training output — fall back to
+            // the package-shipped baseline. PackageResourceLoader picks it
+            // up via AssetDatabase even if Unity's Resources index missed it.
+            return BaselineOnnxResourcePath;
         }
 
         // RacingDriver-v3.4-cold-6599k.onnx → (3, 4)
