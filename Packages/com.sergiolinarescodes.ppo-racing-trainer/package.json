@@ -1,6 +1,6 @@
 {
   "name": "com.sergiolinarescodes.ppo-racing-trainer",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "displayName": "PPO Racing Trainer",
   "description": "Runtime AI racing driver trained with PPO via Unity ML-Agents. Provides the AiDriverAgent prefab, ONNX policies, observation/physics services, and Reflex DI installers consumable from any Unity project. The training side of the workflow lives in the host repository (https://github.com/sergiolinarescodes/unity-ppo-racing-trainer) alongside the Python tooling under tools/.",
   "unity": "6000.4",

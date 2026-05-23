@@ -4,6 +4,15 @@ All notable changes to this package are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-05-24
+
+### Fixed
+- `VersionManifestLoader.LoadAll` now falls back to `Resources/AiDriver/Versions/*.json` when no on-disk `Assets/_Bootstrap/Configs/Versions/` folder is present. Consumers (e.g. the game repo) no longer need to copy training-config files in order to seed `AiDriverVersionRegistry`. Disk entries still win when both sources populate, so the trainer's `/settings` live-edit workflow is unchanged.
+
+### Added
+- Canonical `latest.json` and `v1.json` manifests shipped inside the package at `Runtime/Resources/AiDriver/Versions/`. Loaded via `Resources.LoadAll<TextAsset>("AiDriver/Versions")`.
+- No-arg `VersionManifestSystemInstaller()` convenience constructor that internally calls `VersionManifestLoader.LoadAll()`. Lets a consumer `installers.Add(new VersionManifestSystemInstaller())` without pre-loading the dict.
+
 ## [0.1.2] - 2026-05-24
 
 ### Fixed

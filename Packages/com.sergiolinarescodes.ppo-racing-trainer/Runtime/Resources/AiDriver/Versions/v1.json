@@ -1,0 +1,220 @@
+{
+  "_note": "Frozen V1 snapshot. Field-for-field copy of latest.json at the moment the snapshot was taken (Phase 4 manifest migration). Pair with the RacingDriver-v1.onnx + AiDriverAgentV1.prefab + racing_driver_v1.yaml triplet under docs/snapshot-version.md. MUTATING THIS FILE SILENTLY DESYNCS THE SNAPSHOT FROM ITS ONNX.",
+  "schemaVersion": 1,
+  "versionId": "v1",
+  "displayName": "V1 Snapshot",
+
+  "mlAgents": {
+    "behaviorName": "RacingDriverV1",
+    "configPath": "Assets/_Bootstrap/Configs/MlAgents/racing_driver_v1.yaml"
+  },
+
+  "runtime": {
+    "prefabResourcePath": "AiDriver/Legacy/AiDriverAgentV1",
+    "onnxResourcePath": "AiDriver/Policies/RacingDriver-v1",
+    "requiresSideSystems": true
+  },
+
+  "episode": {
+    "maxStepsPerEpisode": 12000,
+    "offTrackTimeoutSec": 0.5
+  },
+
+  "physics": {
+    "wheelBase": 0.3,
+    "maxSteer": 0.45,
+    "maxAccel": 1.74,
+    "maxBrake": 2.0,
+    "maxSpeed": 7.5,
+    "dragCoefficient": 0.5,
+    "steerRate": 1.2,
+    "gravity": 9.81,
+    "boostThrust": 6.0,
+    "boostDurationSec": 1.5,
+    "boostRechargeRate": 0.2,
+    "offTrackDragMul": 5.0,
+    "offTrackSpeedCapFrac": 0.30,
+    "lateralGripFactor": 21.0,
+    "offTrackGripFactor": 6.0,
+    "slipReleaseFactor": 0.25,
+    "speedInducedUndersteerGain": 20.0,
+    "minCruiseSpeed": 0.0,
+    "lowSpeedTurnBonus": 1.0,
+    "kerbGripFactor": 45.0,
+    "wallBounceDamping": 0.10,
+    "wallNormalRestitution": 0.15,
+    "carCollisionRadius": 0.09,
+    "offKerbCorneringPenalty": 0.30,
+    "offKerbCorneringSteerThreshold": 0.20,
+    "wallStunSeconds": 0.1,
+    "wallDamageCoefficient": 0.08,
+    "wallDamageMinPerHit": 0.02,
+    "minHealthSpeedFactor": 0.30,
+    "wallStunSecondsPerImpactSpeed": 0.04,
+    "maxStunSeconds": 0.6,
+    "tractionCircleGain": 8.0,
+    "minSteerAuthority": 0.18,
+    "highSpeedSteerRateFactor": 3.5,
+    "speedLateralGripScale": 14.0,
+    "trailBrakeAuthorityWeight": 0.15,
+    "straightLineAeroBoost": 1.60,
+    "straightLineAeroRampSec": 1.2,
+    "straightLineAeroRecoverySec": 0.3,
+    "straightLineAeroSteerThreshold": 0.10
+  },
+
+  "tirePhysics": {
+    "kLateralG": 0.001512,
+    "kSlip": 0.011347,
+    "kBurnout": 0.01296,
+    "kBrake": 0.006048,
+    "hardBrakeThreshold": 0.9,
+    "hardBrakePeakMul": 5.0,
+    "hardBrakeExponent": 6.0,
+    "brakeBlockadeInputThreshold": 0.99,
+    "brakeBlockadeHoldSeconds": 0.2,
+    "brakeBlockadePenaltyMul": 5.0,
+    "kKerbStress": 1.5,
+    "punctureThreshold": 0.97,
+    "punctureGThreshold": 6.0,
+    "punctureBaseChancePerSec": 0.0,
+    "puncturedGripFactor": 0.10
+  },
+
+  "drafting": {
+    "maxDistance": 8.0,
+    "lateralTolerance": 2.5,
+    "dragReduction": 0.33,
+    "accelBoost": 0.09625,
+    "minActivationMS": 6.0,
+    "launchGraceSec": 3.0,
+    "attackTau": 0.05,
+    "releaseTau": 0.7
+  },
+
+  "rewardShaper": {
+    "overtakes": {
+      "overtakeBonus": 4.6,
+      "overtakeHoldPerSectorBase": 5.175,
+      "overtakeHoldSectorCap": 16,
+      "overtakeFullLapHeldBonus": 69.0,
+      "gotPassedPenalty": 3.75,
+      "gridGraceSeconds": 4.0,
+      "minPassingAggression": 0.5,
+      "firstSectorAggressionMin": 0.56,
+      "firstSectorAggressionMax": 0.76
+    },
+    "position": {
+      "passivePositionPerSectorScale": 2.07,
+      "passivePositionPerLapScale": 20.7,
+      "cleanDrivingBonusPerSec": 0.66,
+      "cleanDrivingWindowSec": 3.0,
+      "cleanRaceBonusTerminal": 7.5,
+      "holdPositionBonusPerSec": 0.15,
+      "sectorCleanBonus": 1.5,
+      "sectorCleanHealthThreshold": 0.9
+    },
+    "contact": {
+      "carCrashCoef": 1.8,
+      "rearEndOffenderMul": 5.0,
+      "rearEndOffenderFlatPenalty": 50.0,
+      "lowHpVictimThreshold": 0.3,
+      "lowHpVictimExtraPenalty": 80.0,
+      "destroyVictimExtraPenalty": 200.0,
+      "destroyedHealthEpsilon": 0.01,
+      "rearEndVictimMul": 0.1,
+      "rearEndCooldownSec": 0.5,
+      "overtakeGraceSec": 1.0,
+      "minContactImpactForFlatPenaltyMS": 0.0
+    },
+    "threat": {
+      "rayMaxMeters": 8.0,
+      "closingMinMS": 1.5,
+      "clearWindowSec": 0.5,
+      "tireWaiverScale": 0.25,
+      "patienceWindowSec": 0.2,
+      "avoidanceCoeff": 0.25,
+      "avoidanceClosingCapMS": 4.0,
+      "minAvoidanceClearSpeedMS": 1.5,
+      "stuckInThreatPenaltyPerSec": 1.0,
+      "stuckSpeedThresholdMS": 1.5
+    },
+    "pack": {
+      "packProximityBonusPerSec": 0.30,
+      "packProximityRadiusM": 5.0,
+      "packProximityCarCountCap": 6,
+      "packProximityMinSpeedFrac": 0.35,
+      "cleanFollowBonusPerSec": 0.60,
+      "cleanFollowMaxDistM": 3.0,
+      "cleanFollowMinDistM": 0.50,
+      "cleanFollowMinHoldSec": 1.0,
+      "cleanFollowMaxHoldSec": 4.0,
+      "packRacingMinDriverCount": 6
+    },
+    "pace": {
+      "beatBestLapBonus": 1.50,
+      "matchBestLapBonus": 0.60,
+      "matchBestLapToleranceFrac": 0.01,
+      "paceShapingPerStep": 0.0040,
+      "paceShapingMaxPerLap": 0.50,
+      "paceProjectionMinArcFrac": 0.05,
+      "paceProjectionMargin": 0.015,
+      "peakPaceMinMultiplier": 0.10,
+      "peakPaceMaxMultiplier": 1.75,
+      "peakPaceSectorImproveCoeff": 0.5,
+      "peakPaceSectorEmaAlpha": 0.15,
+      "peakPaceSectorMaxAbsDeltaSec": 1.0
+    },
+    "draftAndConsumables": {
+      "draftBonusPerSec": 0.4,
+      "draftPassBonus": 25.0,
+      "draftPassMinStrength": 0.5,
+      "draftPassLookbackSec": 1.0,
+      "fuelMarginPenaltyPerSec": 0.4,
+      "tireOverstressPenaltyPerSec": 0.3,
+      "referenceFuelBurnPerLap": 25.0,
+      "fuelOutPenalty": 50.0,
+      "punctureOffTrackPenalty": 30.0
+    }
+  },
+
+  "trackGeometry": {
+    "cellSize": 3.0,
+    "carPhysicsCellSize": 2.0,
+    "laneHalfWidth": 0.405,
+    "wallHeight": 0.40,
+    "wallThickness": 0.06,
+    "wallShoulderNear": 0.04,
+    "wallShoulderMid": 0.18,
+    "wallShoulder": 0.075,
+    "rampRise": 0.5,
+    "curveRadiusSmall": 0.5,
+    "curveRadiusLarge": 1.0,
+    "curveSegmentsSmall": 10,
+    "curveSegmentsLarge": 16,
+    "pianoBandWidth": 0.06
+  },
+
+  "observation": {
+    "_frozen": true,
+    "floatsPerFrame": 60,
+    "stackedFrames": 3,
+    "wallRayCount": 7,
+    "wallRayMaxMeters": 16.0,
+    "lookaheadAnchors": 5,
+    "lookaheadSeconds": [0.0, 0.1, 0.3, 0.7, 1.5],
+    "opponentRayCount": 5,
+    "coneHalfAngleRad": 0.7854,
+    "otherCarsAhead": 2,
+    "otherCarsBehind": 2,
+    "lateralGAtSaturation": 8.0,
+    "referenceHalfWidth": 1.5,
+    "layoutHash": "f9b250f6ddaebdc8"
+  },
+
+  "codeModules": {
+    "physicsModel": "Default",
+    "observationWriter": "RacingV1",
+    "rewardShaper": "Composite"
+  }
+}
