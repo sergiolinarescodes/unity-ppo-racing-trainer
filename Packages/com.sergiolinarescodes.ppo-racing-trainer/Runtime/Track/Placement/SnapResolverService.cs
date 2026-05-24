@@ -298,6 +298,15 @@ namespace UnityPpoRacingTrainer.Core.Track
             Ghost = ghost;
             Cfg = cfg;
         }
+
+        // Public read accessors over the latest committed frame state so
+        // external authoring tools (e.g. the game's
+        // TrackAuthoringInputSystemInstaller) can record origin/facing for
+        // undo-stack commands without needing internal access to Last /
+        // PipelineFrame's full surface. Null when no preview has been
+        // resolved yet for the current session.
+        public GridPosition? LastOrigin => Last.HasPreview ? Last.Origin : (GridPosition?)null;
+        public TrackDirection? LastFacing => Last.HasPreview ? Last.Facing : (TrackDirection?)null;
     }
 
     internal sealed class ShapePlacementPipeline : IShapePlacementPipeline
